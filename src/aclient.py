@@ -24,6 +24,7 @@ load_dotenv()
 
 class discordClient(discord.Client):
     def __init__(self) -> None:
+        print('prout')
         intents = discord.Intents.default()
         intents.message_content = True
         super().__init__(intents=intents)
@@ -72,9 +73,17 @@ class discordClient(discord.Client):
             author = message.user.id
         else:
             author = message.author.id
+        
+        personality_note = os.getenv('PERSONALITY_NOTE', "")  
+        user_message = user_message + personality_note 
         try:
             response = await self.handle_response(user_message)
-            response_content = f'> **{user_message}** - <@{str(author)}> \n\n{response}'
+
+            # Remove personality note from displayed message
+            personality_note = os.getenv('PERSONALITY_NOTE', "")
+            clean_user_message = user_message.replace(personality_note, "")
+
+            response_content = f'> **{clean_user_message}** - <@{str(author)}> \n\n{response}'
             await send_split_message(self, response_content, message)
         except Exception as e:
             logger.exception(f"Error while sending : {e}")

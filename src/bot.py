@@ -23,7 +23,7 @@ def run_discord_bot():
         logger.info(f'{discordClient.user} is now running!')
 
 
-    @discordClient.tree.command(name="chat", description="Have a chat with ChatGPT")
+    @discordClient.tree.command(name="chat", description="Discute avec moi")
     async def chat(interaction: discord.Interaction, *, message: str):
         if discordClient.is_replying_all == "True":
             await interaction.response.defer(ephemeral=False)
@@ -85,7 +85,7 @@ def run_discord_bot():
             logger.warning("\x1b[31mSwitch to replyAll mode\x1b[0m")
 
 
-    @discordClient.tree.command(name="chat-model", description="Switch the chat model between 'gemini' and 'gpt-4'")
+    @discordClient.tree.command(name="chat-model", description="Change de modèle entre 'gemini' et 'gpt-4'")
     @app_commands.choices(model=[
         app_commands.Choice(name="gemini", value="gemini"),
         app_commands.Choice(name="gpt-4", value="gpt-4"),
@@ -114,36 +114,34 @@ def run_discord_bot():
             await interaction.followup.send(f'> **Error Switching Model: {e}**')
             logger.error(f"Error switching chat model: {e}")
 
-    @discordClient.tree.command(name="reset", description="Complete reset conversation history")
+    @discordClient.tree.command(name="reset", description="Reset la discussion")
     async def reset(interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=False)
         discordClient.conversation_history = []
-        await interaction.followup.send("> **INFO: I have forgotten everything.**")
+        await interaction.followup.send("> **INFO: J'ai tout oublié.**")
         personas.current_persona = "standard"
         logger.warning(
             f"\x1b[31m{discordClient.chatModel} bot has been successfully reset\x1b[0m")
 
 
-    @discordClient.tree.command(name="help", description="Show help for the bot")
+    @discordClient.tree.command(name="help", description="Montre les commandes du bot")
     async def help(interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=False)
-        await interaction.followup.send(""":star: **BASIC COMMANDS** \n
-        - `/chat [message]` Chat with ChatGPT(gpt-4)
-        - `/draw [prompt][model]` Generate an image with model you specific
-        - `/switchpersona [persona]` Switch between optional ChatGPT jailbreaks
-                `dan`: DAN 13.5 (Latest Working ChatGPT Jailbreak prompt)
-                `Smart mode`: AIM (Always Intelligent and Machiavellian)
-                `Developer Mode`: software developer who specializes in the AI's area
-        - `/private` ChatGPT switch to private mode
-        - `/public` ChatGPT switch to public mode
-        - `/replyall` ChatGPT switch between replyAll mode and default mode
-        - `/reset` Clear conversation history
-        - `/chat-model` Switch different chat model
-                `gpt-4`: GPT-4 model
-                `Gemini`: Google gemini-pro model
-
-For complete documentation, please visit:
-https://github.com/Zero6992/chatGPT-discord-bot""")
+        await interaction.followup.send(""":crystal_ball: **COMMANDES BASIQUES** :crystal_ball: \n
+        - `/chat [message]` Dis moi ce que tu veux savoir
+        - `/draw [prompt][model]` Je peux générer une image avec un modèle spécifique
+        - `/switchpersona [persona]` Change entre différentes personnalités :
+                `dan` : DAN 13.5 (Dernière version fonctionnelle du jailbreak ChatGPT).
+                `Smart mode` : AIM (Toujours Intelligent et Machiavélique).
+                `Developer Mode` : Mode développeur spécialisé dans le domaine de l'IA.
+        - `/private` Je passe en mode privé (coquinou).
+        - `/public` Je passe en mode public.
+        - `/replyall` Bascule entre le mode replyAll et le mode par défaut.
+        - `/reset` Réinitialise l'historique de la conversation.
+        - `/chat-model` Change de modèle :
+                `gpt-4` : Modèle GPT-4.
+                `Gemini` : Modèle Google Gemini Pro.
+""")
 
         logger.info(
             "\x1b[31mSomeone needs help!\x1b[0m")
@@ -214,6 +212,7 @@ https://github.com/Zero6992/chatGPT-discord-bot""")
 
     @discordClient.event
     async def on_message(message):
+        print('DEBUG 0')
         if discordClient.is_replying_all == "True":
             if message.author == discordClient.user:
                 return
