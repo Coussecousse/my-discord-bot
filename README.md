@@ -162,3 +162,28 @@
    > **Warning**
    > The bot will easily be triggered in `replyall` mode, which could cause program failures
  ---
+
+
+## Kika README
+1. Update httpx and openai 
+
+2. Bot always active : 
+```bash
+apt install tmux
+# Start a session : 
+tmux new -s discord-bot
+python3 main.py
+```
+Detach from the Session:
+For tmux, press Ctrl+b, then d.
+
+Reattach Later:
+```bash
+tmux attach -t discord-bot
+```
+
+## Next updates : 
+- Change of personnality depending on the day of the week 
+- Talk randomly 
+- Shiny events
+- Custom database for friends with personal description 
