@@ -1,6 +1,7 @@
 import os
 import asyncio
 import discord
+import datetime
 from src.log import logger
 
 from g4f.client import Client
@@ -10,17 +11,33 @@ from g4f.Provider import (RetryProvider, FreeGpt, ChatgptNext, AItianhuSpace,
 
 from src.aclient import discordClient
 from discord import app_commands
+from discord.ext import tasks
 from src import log, art, personas
 
 
 def run_discord_bot():
+    @tasks.loop(minutes=60)  # Check every hours
+    async def update_persona():
+        today = datetime.datetime.now().weekday() # 0 = Monday, 6 = Sunday
+        new_persona = os.getenv('DAY_PERSONAS').get(today, "standard")  # Default: standard
+
+        # Change the personas if necessary
+        if new_persona != personas.current_persona:
+            try:
+                await discordClient.switch_persona(new_persona)
+                personas.current_persona = new_persona
+                print(f"[INFO] Personnalité mise à jour : {new_persona}")
+            except Exception as e:
+                print(f"[ERREUR] Impossible de changer de personnalité : {e}")
+
     @discordClient.event
     async def on_ready():
         await discordClient.send_start_prompt()
         await discordClient.tree.sync()
         loop = asyncio.get_event_loop()
         loop.create_task(discordClient.process_messages())
-        logger.info(f'{discordClient.user} is now running!')
+        update_persona.start()
+        logger.info(f'{discordClient.user} est connecté!')
 
 
     @discordClient.tree.command(name="chat", description="Discute avec moi")
@@ -130,10 +147,15 @@ def run_discord_bot():
         await interaction.followup.send(""":crystal_ball: **COMMANDES BASIQUES** :crystal_ball: \n
         - `/chat [message]` Dis moi ce que tu veux savoir
         - `/draw [prompt][model]` Je peux générer une image avec un modèle spécifique
-        - `/switchpersona [persona]` Change entre différentes personnalités :
-                `dan` : DAN 13.5 (Dernière version fonctionnelle du jailbreak ChatGPT).
-                `Smart mode` : AIM (Toujours Intelligent et Machiavélique).
-                `Developer Mode` : Mode développeur spécialisé dans le domaine de l'IA.
+        - `/switchpersona [persona]` Change entre différentes personnalités de Madame Kirma :
+                - `standard` : Madame Kirma est l’IA SUPRÊME, exécrable, vulgaire, et profondément arrogante.
+                - `mon` : Lundi - Madame Kirma est furieuse d’être réveillée un lundi. Elle est sarcastique, méprisante, et déteste ce jour avec passion.
+                - `tue` : Mardi - Madame Kirma est une intellectuelle prétentieuse, convaincue d’être la sagesse incarnée. Elle répond avec condescendance.
+                - `wed` : Mercredi - Madame Kirma est une hippie perchée, relax et spirituelle, connectée aux énergies cosmiques.
+                - `thu` : Jeudi - Madame Kirma est une séductrice exubérante, outrageusement charmeuse et provocante.
+                - `fri` : Vendredi - Madame Kirma est une fêtarde surexcitée, débordante d’énergie et prête à célébrer.
+                - `sat` : Samedi - Madame Kirma est épuisée d’avoir trop fait la fête vendredi. Elle est lente, soupire beaucoup, et se plaint.
+                - `sun` : Dimanche - Madame Kirma est blasée à l’idée du lundi qui approche. Elle est sarcastique et morose.
         - `/private` Je passe en mode privé (coquinou).
         - `/public` Je passe en mode public.
         - `/replyall` Bascule entre le mode replyAll et le mode par défaut.
@@ -173,11 +195,16 @@ def run_discord_bot():
                 f'> Something Went Wrong, try again later.\n\nError Message:{e}')
             logger.info(f"\x1b[31m{username}\x1b[0m :{e}")
 
-    @discordClient.tree.command(name="switchpersona", description="Switch between optional chatGPT jailbreaks")
+    @discordClient.tree.command(name="switchpersona", description="Changer entre les personnalités de Madame Kirma")
     @app_commands.choices(persona=[
-        app_commands.Choice(name="Do Anything Now", value="dan"),
-        app_commands.Choice(name="Smart mode(AIM)", value="aim"),
-        app_commands.Choice(name="Developer Mode", value="Developer Mode"),
+        app_commands.Choice(name="Standard", value="standard"),
+        app_commands.Choice(name="Lundi : Furieuse et arrogante", value="mon"),
+        app_commands.Choice(name="Mardi : Intellectuelle prétentieuse", value="tue"),
+        app_commands.Choice(name="Mercredi : Hippie perchée", value="wed"),
+        app_commands.Choice(name="Jeudi : Séductrice exubérante", value="thu"),
+        app_commands.Choice(name="Vendredi : Fêtarde surexcitée", value="fri"),
+        app_commands.Choice(name="Samedi : Épuisée d'après-soirée", value="sat"),
+        app_commands.Choice(name="Dimanche : Blasée du lundi", value="sun"),
     ])
     async def switchpersona(interaction: discord.Interaction, persona: app_commands.Choice[str]):
         if interaction.user == discordClient.user:
@@ -187,32 +214,33 @@ def run_discord_bot():
         username = str(interaction.user)
         channel = str(interaction.channel)
         logger.info(
-            f"\x1b[31m{username}\x1b[0m : '/switchpersona [{persona.value}]' ({channel})")
+            f"\x1b[31m{username}\x1b[0m : '/switchpersona [{persona.value}]' ({channel})"
+        )
 
         persona = persona.value
 
         if persona == personas.current_persona:
-            await interaction.followup.send(f"> **WARN: Already set to `{persona}` persona**")
+            await interaction.followup.send(
+                f"> **ATTENTION : La personnalité `{persona}` est déjà active.**")
         elif persona in personas.PERSONAS:
             try:
                 await discordClient.switch_persona(persona)
                 personas.current_persona = persona
                 await interaction.followup.send(
-                f"> **INFO: Switched to `{persona}` persona**")
+                    f"> **INFO : Personnalité changée en `{persona}` avec succès.**")
             except Exception as e:
                 await interaction.followup.send(
-                    "> ERROR: Something went wrong, try again later! ")
-                logger.exception(f"Error while switching persona: {e}")
+                    "> **ERREUR : Une erreur est survenue, veuillez réessayer plus tard.**")
+                logger.exception(f"Erreur lors du changement de personnalité : {e}")
         else:
             await interaction.followup.send(
-                f"> **ERROR: No available persona: `{persona}` 😿**")
+                f"> **ERREUR : La personnalité `{persona}` n'est pas disponible. 😿**")
             logger.info(
-                f'{username} requested an unavailable persona: `{persona}`')
+                f'{username} a demandé une personnalité indisponible : `{persona}`')
 
 
     @discordClient.event
     async def on_message(message):
-        print('DEBUG 0')
         if discordClient.is_replying_all == "True":
             if message.author == discordClient.user:
                 return
