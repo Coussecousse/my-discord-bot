@@ -2,6 +2,7 @@ import os
 import asyncio
 import discord
 import datetime
+import json
 from src.log import logger
 
 from g4f.client import Client
@@ -18,8 +19,9 @@ from src import log, art, personas
 def run_discord_bot():
     @tasks.loop(minutes=60)  # Check every hours
     async def update_persona():
+        DAY_PERSONAS = json.loads(os.getenv('DAY_PERSONAS', '{}'))
         today = datetime.datetime.now().weekday() # 0 = Monday, 6 = Sunday
-        new_persona = os.getenv('DAY_PERSONAS').get(today, "standard")  # Default: standard
+        new_persona = DAY_PERSONAS.get(today, "standard")  # Default: standard
 
         # Change the personas if necessary
         if new_persona != personas.current_persona:
