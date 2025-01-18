@@ -21,9 +21,6 @@ def run_discord_bot():
     @discordClient.event
     async def on_ready():
         global skip_first_loop
-
-
-
         await discordClient.send_start_prompt()
         await discordClient.tree.sync()
         loop = asyncio.get_event_loop()
@@ -93,34 +90,34 @@ def run_discord_bot():
             logger.warning("\x1b[31mSwitch to replyAll mode\x1b[0m")
 
 
-    @discordClient.tree.command(name="chat-model", description="Change de modèle entre 'gemini' et 'gpt-4'")
-    @app_commands.choices(model=[
-        app_commands.Choice(name="gemini", value="gemini"),
-        app_commands.Choice(name="gpt-4", value="gpt-4"),
-        app_commands.Choice(name="gpt-3.5-turbo", value="gpt-3.5-turbo"),
-    ])
-    async def chat_model(interaction: discord.Interaction, model: app_commands.Choice[str]):
-        await interaction.response.defer(ephemeral=True)
-        try:
-            if model.value == "gemini":
-                discordClient.reset_conversation_history()
-                discordClient.chatBot = Client(provider=RetryProvider([Gemini, FreeChatgpt], shuffle=False))
-                discordClient.chatModel = model.value
-            elif model.value == "gpt-4":
-                discordClient.reset_conversation_history()
-                discordClient.chatBot = Client(provider=RetryProvider([Liaobots, You, OpenaiChat, Bing], shuffle=False))
-                discordClient.chatModel = model.value
-            elif model.value == "gpt-3.5-turbo":
-                discordClient.reset_conversation_history()
-                discordClient.chatBot = Client(provider=RetryProvider([FreeGpt, ChatgptNext, AItianhuSpace], shuffle=False))
-                discordClient.chatModel = model.value
+    # @discordClient.tree.command(name="chat-model", description="Change de modèle entre 'gemini' et 'gpt-4'")
+    # @app_commands.choices(model=[
+    #     app_commands.Choice(name="gemini", value="gemini"),
+    #     app_commands.Choice(name="gpt-4", value="gpt-4"),
+    #     app_commands.Choice(name="gpt-3.5-turbo", value="gpt-3.5-turbo"),
+    # ])
+    # async def chat_model(interaction: discord.Interaction, model: app_commands.Choice[str]):
+    #     await interaction.response.defer(ephemeral=True)
+    #     try:
+    #         if model.value == "gemini":
+    #             discordClient.reset_conversation_history()
+    #             discordClient.chatBot = Client(provider=RetryProvider([Gemini, FreeChatgpt], shuffle=False))
+    #             discordClient.chatModel = model.value
+    #         elif model.value == "gpt-4":
+    #             discordClient.reset_conversation_history()
+    #             discordClient.chatBot = Client(provider=RetryProvider([Liaobots, You, OpenaiChat, Bing], shuffle=False))
+    #             discordClient.chatModel = model.value
+    #         elif model.value == "gpt-3.5-turbo":
+    #             discordClient.reset_conversation_history()
+    #             discordClient.chatBot = Client(provider=RetryProvider([FreeGpt, ChatgptNext, AItianhuSpace], shuffle=False))
+    #             discordClient.chatModel = model.value
 
-            await interaction.followup.send(f"> **INFO: Chat model switched to {model.name}.**")
-            logger.info(f"Switched chat model to {model.name}")
+    #         await interaction.followup.send(f"> **INFO: Chat model switched to {model.name}.**")
+    #         logger.info(f"Switched chat model to {model.name}")
 
-        except Exception as e:
-            await interaction.followup.send(f'> **Error Switching Model: {e}**')
-            logger.error(f"Error switching chat model: {e}")
+    #     except Exception as e:
+    #         await interaction.followup.send(f'> **Error Switching Model: {e}**')
+    #         logger.error(f"Error switching chat model: {e}")
 
     @discordClient.tree.command(name="reset", description="Reset la discussion")
     async def reset(interaction: discord.Interaction):
@@ -151,10 +148,7 @@ def run_discord_bot():
 - `/public` Je passe en mode public.
 - `/replyall` Bascule entre le mode replyAll et le mode par défaut.
 - `/reset` Réinitialise l'historique de la conversation.
-- `/chat-model` Change de modèle :
-    `gpt-4` : Modèle GPT-4.
-    `Gemini` : Modèle Google Gemini Pro.
-
+                                        
 """)
 
         logger.info(
