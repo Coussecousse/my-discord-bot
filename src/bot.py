@@ -1,8 +1,7 @@
 import os
 import asyncio
 import discord
-import datetime
-import json
+
 from src.log import logger
 
 from g4f.client import Client
@@ -12,33 +11,23 @@ from g4f.Provider import (RetryProvider, FreeGpt, ChatgptNext, AItianhuSpace,
 
 from src.aclient import discordClient
 from discord import app_commands
-from discord.ext import tasks
 from src import log, art, personas
 
+# Initialize a flag to skip the first loop iteration
+skip_first_loop = False
 
-def run_discord_bot():
-    @tasks.loop(minutes=60)  # Check every hours
-    async def update_persona():
-        DAY_PERSONAS = json.loads(os.getenv('DAY_PERSONAS', '{}'))
-        today = datetime.datetime.now().weekday() # 0 = Monday, 6 = Sunday
-        new_persona = DAY_PERSONAS.get(today, "standard")  # Default: standard
-
-        # Change the personas if necessary
-        if new_persona != personas.current_persona:
-            try:
-                await discordClient.switch_persona(new_persona)
-                personas.current_persona = new_persona
-                print(f"[INFO] Personnalité mise à jour : {new_persona}")
-            except Exception as e:
-                print(f"[ERREUR] Impossible de changer de personnalité : {e}")
+def run_discord_bot():            
 
     @discordClient.event
     async def on_ready():
+        global skip_first_loop
+
+
+
         await discordClient.send_start_prompt()
         await discordClient.tree.sync()
         loop = asyncio.get_event_loop()
         loop.create_task(discordClient.process_messages())
-        update_persona.start()
         logger.info(f'{discordClient.user} est connecté!')
 
 
@@ -146,25 +135,26 @@ def run_discord_bot():
     @discordClient.tree.command(name="help", description="Montre les commandes du bot")
     async def help(interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=False)
-        await interaction.followup.send(""":crystal_ball: **COMMANDES BASIQUES** :crystal_ball: \n
-        - `/chat [message]` Dis moi ce que tu veux savoir
-        - `/draw [prompt][model]` Je peux générer une image avec un modèle spécifique
-        - `/switchpersona [persona]` Change entre différentes personnalités de Madame Kirma :
-                - `standard` : Madame Kirma est l’IA SUPRÊME, exécrable, vulgaire, et profondément arrogante.
-                - `mon` : Lundi - Madame Kirma est furieuse d’être réveillée un lundi. Elle est sarcastique, méprisante, et déteste ce jour avec passion.
-                - `tue` : Mardi - Madame Kirma est une intellectuelle prétentieuse, convaincue d’être la sagesse incarnée. Elle répond avec condescendance.
-                - `wed` : Mercredi - Madame Kirma est une hippie perchée, relax et spirituelle, connectée aux énergies cosmiques.
-                - `thu` : Jeudi - Madame Kirma est une séductrice exubérante, outrageusement charmeuse et provocante.
-                - `fri` : Vendredi - Madame Kirma est une fêtarde surexcitée, débordante d’énergie et prête à célébrer.
-                - `sat` : Samedi - Madame Kirma est épuisée d’avoir trop fait la fête vendredi. Elle est lente, soupire beaucoup, et se plaint.
-                - `sun` : Dimanche - Madame Kirma est blasée à l’idée du lundi qui approche. Elle est sarcastique et morose.
-        - `/private` Je passe en mode privé (coquinou).
-        - `/public` Je passe en mode public.
-        - `/replyall` Bascule entre le mode replyAll et le mode par défaut.
-        - `/reset` Réinitialise l'historique de la conversation.
-        - `/chat-model` Change de modèle :
-                `gpt-4` : Modèle GPT-4.
-                `Gemini` : Modèle Google Gemini Pro.
+        await interaction.followup.send(""":crystal_ball: **COMMANDES BASIQUES** :crystal_ball:
+- `/chat [message]` Dis moi ce que tu veux savoir.
+- `/draw [prompt][model]` Je peux générer une image avec un modèle spécifique.
+- `/switchpersona [persona]` Change entre différentes personnalités de Madame Kirma :
+    - `standard` : Madame Kirma est l’IA SUPRÊME, exécrable, vulgaire, et profondément arrogante.
+    - `mon` : Lundi - Madame Kirma est furieuse d’être réveillée un lundi. Elle est sarcastique, méprisante, et déteste ce jour avec passion.
+    - `tue` : Mardi - Madame Kirma est une intellectuelle prétentieuse, convaincue d’être la sagesse incarnée. Elle répond avec condescendance.
+    - `wed` : Mercredi - Madame Kirma est une hippie perchée, relax et spirituelle, connectée aux énergies cosmiques.
+    - `thu` : Jeudi - Madame Kirma est une séductrice exubérante, outrageusement charmeuse et provocante.
+    - `fri` : Vendredi - Madame Kirma est une fêtarde surexcitée, débordante d’énergie et prête à célébrer.
+    - `sat` : Samedi - Madame Kirma est épuisée d’avoir trop fait la fête vendredi. Elle est lente, soupire beaucoup, et se plaint.
+    - `sun` : Dimanche - Madame Kirma est blasée à l’idée du lundi qui approche. Elle est sarcastique et morose.
+- `/private` Je passe en mode privé (coquinou).
+- `/public` Je passe en mode public.
+- `/replyall` Bascule entre le mode replyAll et le mode par défaut.
+- `/reset` Réinitialise l'historique de la conversation.
+- `/chat-model` Change de modèle :
+    `gpt-4` : Modèle GPT-4.
+    `Gemini` : Modèle Google Gemini Pro.
+
 """)
 
         logger.info(

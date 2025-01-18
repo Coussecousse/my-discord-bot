@@ -1,6 +1,8 @@
 import os
 import discord
 import asyncio
+import datetime
+import json
 
 from src import personas
 from src.log import logger
@@ -8,13 +10,14 @@ from utils.message_utils import send_split_message
 
 from dotenv import load_dotenv
 from discord import app_commands
+from discord.ext import tasks
 from asgiref.sync import sync_to_async
 
 import g4f.debug
 from g4f.client import Client
 from g4f.stubs import ChatCompletion
-from g4f.Provider import RetryProvider, OpenaiChat, Aichatos, Liaobots # gpt-4
-from g4f.Provider import  Blackbox  # gpt-3.5-turbo
+from g4f.Provider import RetryProvider, OpenaiChat, Aichatos, Liaobots  # gpt-4
+from g4f.Provider import Blackbox  # gpt-3.5-turbo
 
 from openai import AsyncOpenAI
 
@@ -24,13 +27,12 @@ load_dotenv()
 
 class discordClient(discord.Client):
     def __init__(self) -> None:
-        print('prout')
         intents = discord.Intents.default()
         intents.message_content = True
         super().__init__(intents=intents)
         self.tree = app_commands.CommandTree(self)
         self.chatBot = Client(
-            provider = RetryProvider([OpenaiChat, Aichatos, Blackbox, Liaobots], shuffle=False),
+            provider=RetryProvider([OpenaiChat, Aichatos, Blackbox, Liaobots], shuffle=False),
         )
         self.chatModel = os.getenv("MODEL")
         self.conversation_history = []
@@ -63,57 +65,64 @@ class discordClient(discord.Client):
                             self.message_queue.task_done()
             await asyncio.sleep(1)
 
-
     async def enqueue_message(self, message, user_message):
         await message.response.defer(ephemeral=self.isPrivate) if self.is_replying_all == "False" else None
         await self.message_queue.put((message, user_message))
 
     async def send_message(self, message, user_message):
-        if self.is_replying_all == "False":
-            author = message.user.id
-        else:
-            author = message.author.id
-        
-        personality_note = os.getenv('PERSONALITY_NOTE', "")  
-        user_message = user_message + personality_note 
+        author = message.user.id if self.is_replying_all == "False" else message.author.id
         try:
             response = await self.handle_response(user_message)
-
-            # Remove personality note from displayed message
-            personality_note = os.getenv('PERSONALITY_NOTE', "")
-            clean_user_message = user_message.replace(personality_note, "")
-
-            response_content = f'> **{clean_user_message}** - <@{str(author)}> \n\n{response}'
+            response_content = f'> **{user_message}** - <@{str(author)}> \n\n{response}'
             await send_split_message(self, response_content, message)
         except Exception as e:
-            logger.exception(f"Error while sending : {e}")
-            # Error handling as before
+            logger.exception(f"Error while sending: {e}")
+
+    @tasks.loop(minutes=60)
+    async def update_persona(self):
+        DAY_PERSONAS = json.loads(os.getenv('DAY_PERSONAS', '{}'))
+        today = datetime.datetime.now().weekday()  # 0 = Monday, 6 = Sunday
+        new_persona = DAY_PERSONAS.get(str(today), "standard")  # Default: standard
+
+        if new_persona != personas.current_persona:
+            try:
+                await self.switch_persona(new_persona)
+                personas.current_persona = new_persona
+                print(f"[INFO] Personnalité mise à jour : {new_persona}")
+            except Exception as e:
+                print(f"[ERREUR] Impossible de changer de personnalité : {e}")
+        else:
+            print(f"[INFO] Pas de changement nécessaire. Personnalité actuelle : {personas.current_persona}")
 
     async def send_start_prompt(self):
         discord_channel_id = os.getenv("DISCORD_CHANNEL_ID")
         try:
+            await self.update_persona()
+            if not self.update_persona.is_running():
+                print("DEBUG: Starting update_persona loop")
+                self.update_persona.start()
+
             if self.starting_prompt and discord_channel_id:
                 channel = self.get_channel(int(discord_channel_id))
-                logger.info(f"Send system prompt with size {len(self.starting_prompt)}")
+                logger.info(f"Sending system prompt with size {len(self.starting_prompt)}")
 
                 response = await self.handle_response(self.starting_prompt)
                 await channel.send(f"{response}")
 
                 logger.info(f"System prompt response: {response}")
             else:
-                logger.info("No starting prompt given or no Discord channel selected. Skipping sending system prompt.")
+                logger.info("No starting prompt or Discord channel configured. Skipping.")
         except Exception as e:
             logger.exception(f"Error while sending system prompt: {e}")
 
     async def handle_response(self, user_message) -> str:
         self.conversation_history.append({'role': 'user', 'content': user_message})
         if len(self.conversation_history) > 26:
-             del self.conversation_history[4:6]
+            del self.conversation_history[4:6]
+
         if os.getenv("OPENAI_ENABLED") == "False":
-            async_create = sync_to_async(self.chatBot.chat.completions.create, 
-                                         thread_sensitive=True)
-            response: ChatCompletion = await async_create(model=self.chatModel, 
-                                                          messages=self.conversation_history)
+            async_create = sync_to_async(self.chatBot.chat.completions.create, thread_sensitive=True)
+            response: ChatCompletion = await async_create(model=self.chatModel, messages=self.conversation_history)
         else:
             response = await self.openai_client.chat.completions.create(
                 model=self.chatModel,
@@ -129,12 +138,11 @@ class discordClient(discord.Client):
         self.conversation_history = []
         personas.current_persona = "standard"
 
-    # prompt engineering
     async def switch_persona(self, persona) -> None:
         self.reset_conversation_history()
-        await self.handle_response(personas.PERSONAS.get(persona))
-        await self.send_start_prompt()
-
+        persona_prompt = personas.PERSONAS.get(persona)
+        await self.handle_response(persona_prompt)
+        # await self.send_start_prompt()
 
 
 discordClient = discordClient()
