@@ -42,6 +42,7 @@ class discordClient(discord.Client):
         self.is_replying_all = os.getenv("REPLYING_ALL")
         self.replying_all_discord_channel_id = os.getenv("REPLYING_ALL_DISCORD_CHANNEL_ID")
         self.openai_client = AsyncOpenAI(api_key=os.getenv("OPENAI_KEY"))
+        self.discord_channel_id = os.getenv("DISCORD_CHANNEL_ID")
 
         config_dir = os.path.abspath(f"{__file__}/../../")
         prompt_name = 'system_prompt.txt'
@@ -79,11 +80,13 @@ class discordClient(discord.Client):
             logger.exception(f"Error while sending: {e}")
 
     @tasks.loop(minutes=60)
-    async def update_persona(self):
+    async def update_persona_and_daily_message(self):
+        # Met à jour la personnalité
         DAY_PERSONAS = json.loads(os.getenv('DAY_PERSONAS', '{}'))
         today = datetime.datetime.now().weekday()  # 0 = Monday, 6 = Sunday
         new_persona = DAY_PERSONAS.get(str(today), "standard")  # Default: standard
 
+        # Vérifie et met à jour la personnalité
         if new_persona != personas.current_persona:
             try:
                 await self.switch_persona(new_persona)
@@ -94,16 +97,41 @@ class discordClient(discord.Client):
         else:
             print(f"[INFO] Pas de changement nécessaire. Personnalité actuelle : {personas.current_persona}")
 
+        # Vérifie si l'heure est entre 9h et 10h pour envoyer le message du jour
+        now = datetime.datetime.now()
+        if now.hour == 9:
+            print(f"[DEBUG] Préparation pour envoyer le message du jour à : {now}")
+            channel = self.get_channel(int(self.discord_channel_id))
+            if channel:
+                try:
+                    # Prompt pour l'IA
+                    prompt = "Génère un message personnalisé pour la journée pour les membres du serveur discord."
+                    generated_message = await self.handle_response(prompt)
+                    
+                    # Envoie le message généré dans le canal
+                    await channel.send(generated_message)
+                    print(f"[INFO] Message du jour envoyé : {generated_message}")
+                except Exception as e:
+                    logger.exception(f"Erreur lors de l'envoi du message du jour : {e}")
+            else:
+                logger.error(f"Canal non trouvé : {self.discord_channel_id}")
+        else:
+            print("[DEBUG] Pas l'heure d'envoyer le message du jour.")
+
     async def send_start_prompt(self):
-        discord_channel_id = os.getenv("DISCORD_CHANNEL_ID")
         try:
             await self.update_persona()
             if not self.update_persona.is_running():
                 print("DEBUG: Starting update_persona loop")
                 self.update_persona.start()
 
-            if self.starting_prompt and discord_channel_id:
-                channel = self.get_channel(int(discord_channel_id))
+            await self.daily_message()
+            if not self.daily_message.is_running():
+                print("DEBUG: Starting daily_message loop")
+                self.daily_message.start()
+
+            if self.starting_prompt and self.discord_channel_id:
+                channel = self.get_channel(int(self.discord_channel_id))
                 logger.info(f"Sending system prompt with size {len(self.starting_prompt)}")
 
                 response = await self.handle_response(self.starting_prompt)
@@ -115,25 +143,6 @@ class discordClient(discord.Client):
         except Exception as e:
             logger.exception(f"Error while sending system prompt: {e}")
 
-    async def handle_response(self, user_message) -> str:
-        self.conversation_history.append({'role': 'user', 'content': user_message})
-        if len(self.conversation_history) > 26:
-            del self.conversation_history[4:6]
-
-        if os.getenv("OPENAI_ENABLED") == "False":
-            async_create = sync_to_async(self.chatBot.chat.completions.create, thread_sensitive=True)
-            response: ChatCompletion = await async_create(model=self.chatModel, messages=self.conversation_history)
-        else:
-            response = await self.openai_client.chat.completions.create(
-                model=self.chatModel,
-                messages=self.conversation_history
-            )
-
-        bot_response = response.choices[0].message.content
-        self.conversation_history.append({'role': 'assistant', 'content': bot_response})
-
-        return bot_response
-
     def reset_conversation_history(self):
         self.conversation_history = []
         personas.current_persona = "standard"
@@ -144,5 +153,22 @@ class discordClient(discord.Client):
         await self.handle_response(persona_prompt)
         # await self.send_start_prompt()
 
+    async def handle_response(self, user_message) -> str:
+            self.conversation_history.append({'role': 'user', 'content': user_message})
+            if len(self.conversation_history) > 26:
+                del self.conversation_history[4:6]
 
+            if os.getenv("OPENAI_ENABLED") == "False":
+                async_create = sync_to_async(self.chatBot.chat.completions.create, thread_sensitive=True)
+                response: ChatCompletion = await async_create(model=self.chatModel, messages=self.conversation_history)
+            else:
+                response = await self.openai_client.chat.completions.create(
+                    model=self.chatModel,
+                    messages=self.conversation_history
+                )
+
+            bot_response = response.choices[0].message.content
+            self.conversation_history.append({'role': 'assistant', 'content': bot_response})
+
+            return bot_response
 discordClient = discordClient()
