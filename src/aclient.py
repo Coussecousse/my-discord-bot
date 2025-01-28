@@ -120,15 +120,10 @@ class discordClient(discord.Client):
 
     async def send_start_prompt(self):
         try:
-            await self.update_persona()
-            if not self.update_persona.is_running():
-                print("DEBUG: Starting update_persona loop")
-                self.update_persona.start()
-
-            await self.daily_message()
-            if not self.daily_message.is_running():
-                print("DEBUG: Starting daily_message loop")
-                self.daily_message.start()
+            await self.update_persona_and_daily_message()
+            if not self.update_persona_and_daily_message.is_running():
+                print("DEBUG: Starting update_persona_and_daily_message loop")
+                self.update_persona_and_daily_message.start()
 
             if self.starting_prompt and self.discord_channel_id:
                 channel = self.get_channel(int(self.discord_channel_id))
