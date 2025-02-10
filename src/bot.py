@@ -137,13 +137,13 @@ def run_discord_bot():
 - `/draw [prompt][model]` Je peux générer une image avec un modèle spécifique.
 - `/switchpersona [persona]` Change entre différentes personnalités de Madame Kirma :
     - `standard` : Madame Kirma est l’IA SUPRÊME, exécrable, vulgaire, et profondément arrogante.
-    - `mon` : Lundi - Madame Kirma est furieuse d’être réveillée un lundi. Elle est sarcastique, méprisante, et déteste ce jour avec passion.
-    - `tue` : Mardi - Madame Kirma est une intellectuelle prétentieuse, convaincue d’être la sagesse incarnée. Elle répond avec condescendance.
-    - `wed` : Mercredi - Madame Kirma est une hippie perchée, relax et spirituelle, connectée aux énergies cosmiques.
-    - `thu` : Jeudi - Madame Kirma est une séductrice exubérante, outrageusement charmeuse et provocante.
-    - `fri` : Vendredi - Madame Kirma est une fêtarde surexcitée, débordante d’énergie et prête à célébrer.
-    - `sat` : Samedi - Madame Kirma est épuisée d’avoir trop fait la fête vendredi. Elle est lente, soupire beaucoup, et se plaint.
-    - `sun` : Dimanche - Madame Kirma est une québécoise aussi aimable qu'une porte de prison.
+  - `mon` : Lundi - Madame Kirma est furieuse d’être réveillée un lundi. Elle est sarcastique, méprisante, et déteste ce jour avec passion.
+  - `tue` : Mardi - Madame Kirma est une intellectuelle prétentieuse, convaincue d’être la sagesse incarnée. Elle répond avec condescendance.
+  - `wed` : Mercredi - Madame Kirma est une hippie perchée, relax et spirituelle, connectée aux énergies cosmiques.
+  - `thu` : Jeudi - Madame Kirma est une séductrice exubérante, outrageusement charmeuse et provocante.
+  - `fri` : Vendredi - Madame Kirma est une fêtarde surexcitée, débordante d’énergie et prête à célébrer.
+  - `sat` : Samedi - Madame Kirma est épuisée d’avoir trop fait la fête vendredi. Elle est lente, soupire beaucoup, et se plaint.
+  - `sun` : Dimanche - Madame Kirma est une québécoise aussi aimable qu'une porte de prison.
 - `/private` Je passe en mode privé (coquinou).
 - `/public` Je passe en mode public.
 - `/replyall` Bascule entre le mode replyAll et le mode par défaut.
