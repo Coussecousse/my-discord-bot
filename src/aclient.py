@@ -99,7 +99,7 @@ class discordClient(discord.Client):
 
         # Vérifie si l'heure est entre 9h et 10h pour envoyer le message du jour
         now = datetime.datetime.now()
-        if now.hour == 9:
+        if now.hour == 8:
             print(f"[DEBUG] Préparation pour envoyer le message du jour à : {now}")
             channel = self.get_channel(int(self.discord_channel_id))
             if channel:
@@ -144,7 +144,7 @@ class discordClient(discord.Client):
         personas.current_persona = "standard"
 
     async def switch_persona(self, persona) -> None:
-        self.reset_conversation_history()
+        # self.reset_conversation_history()
         persona_prompt = personas.PERSONAS.get(persona)
         await self.handle_response(persona_prompt)
         # await self.send_start_prompt()
