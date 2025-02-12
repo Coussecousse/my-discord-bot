@@ -32,3 +32,5 @@ def get_cursor(cnx):
 def close_cursor(cursor):
     cursor.close()
 
+def create_user():
+    

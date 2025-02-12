@@ -12,6 +12,7 @@ from g4f.Provider import (RetryProvider, FreeGpt, ChatgptNext, AItianhuSpace,
 from src.aclient import discordClient
 from discord import app_commands
 from src import log, art, personas
+from src.db.db_commands import DatabaseCommands
 
 # Initialize a flag to skip the first loop iteration
 skip_first_loop = False
@@ -128,7 +129,6 @@ def run_discord_bot():
         logger.warning(
             f"\x1b[31m{discordClient.chatModel} bot has been successfully reset\x1b[0m")
 
-
     @discordClient.tree.command(name="help", description="Montre les commandes du bot")
     async def help(interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=False)
@@ -223,6 +223,7 @@ def run_discord_bot():
             logger.info(
                 f'{username} a demandé une personnalité indisponible : `{persona}`')
 
+    # @discordClient.tree.command(DatabaseCommands(name="db", description='Access to database functionalities'))
 
     @discordClient.event
     async def on_message(message):
