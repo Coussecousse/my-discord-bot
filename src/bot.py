@@ -147,8 +147,7 @@ def run_discord_bot():
 - `/private` Je passe en mode privé (coquinou).
 - `/public` Je passe en mode public.
 - `/replyall` Bascule entre le mode replyAll et le mode par défaut.
-- `/reset` Réinitialise l'historique de la conversation.
-                                        
+- `/reset` Réinitialise l'historique de la conversation.                        
 """)
 
         logger.info(
