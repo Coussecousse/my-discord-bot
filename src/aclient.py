@@ -105,7 +105,7 @@ class discordClient(discord.Client):
             if channel:
                 try:
                     # Prompt pour l'IA
-                    prompt = "Génère une message personnalisé pour l'anniversaire d'un membre du serveur discord qui s'appelle <@bluewhite13> mais n'oublie pas ta personnalité et tu dois être vache avec lui."
+                    prompt = "Génère une message personnalisé pour l'anniversaire @bluewhite13 donc souhaite lui un joyeux anniversaire mais n'oublie pas ta personnalité et tu dois être méchante avec lui."
                     generated_message = await self.handle_response(prompt)
                     
                     # Envoie le message généré dans le canal
