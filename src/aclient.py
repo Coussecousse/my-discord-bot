@@ -3,8 +3,10 @@ import discord
 import asyncio
 import datetime
 import json
+import random  # Add this import
 
 from src import personas
+from src import cultural_theme
 from src.log import logger
 from utils.message_utils import send_split_message
 
@@ -104,8 +106,9 @@ class discordClient(discord.Client):
             channel = self.get_channel(int(self.discord_channel_id))
             if channel:
                 try:
+                    theme = random.choice(cultural_theme.THEMES)  # Use random.choice to select a theme
                     # Prompt pour l'IA
-                    prompt = "Génère une message personnalisé pour l'anniversaire @bluewhite13 donc souhaite lui un joyeux anniversaire mais n'oublie pas ta personnalité et tu dois être méchante avec lui. C'est un voleur de heal professionel"
+                    prompt = f"Génère un message pour souhaiter une bonne journée et nous faire apprendre quelque chose de nouveau sur ce thème : {theme}"
 
                     generated_message = await self.handle_response(prompt)
                     
