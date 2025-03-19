@@ -108,7 +108,7 @@ class discordClient(discord.Client):
                 try:
                     theme = random.choice(cultural_theme.THEMES)  # Use random.choice to select a theme
                     # Prompt pour l'IA
-                    prompt = f"Génère un message pour souhaiter une bonne journée et améliorer notre culture générale en nous apprenant quelque chose de nouveau et intéressant sur ce thème : {theme}"
+                    prompt = f"Génère un message pour souhaiter une bonne journée et améliorer notre culture générale en nous apprenant quelque chose de nouveau, de concret, réel et intéressant sur ce thème : {theme}. Rentres dans les détails pour nous en apprendre un maximum comme si nous étions tes élèves.""
 
                     generated_message = await self.handle_response(prompt)
                     
