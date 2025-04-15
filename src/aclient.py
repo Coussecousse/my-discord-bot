@@ -74,9 +74,9 @@ class discordClient(discord.Client):
 
     async def send_message(self, message, user_message):
         author = message.user.id if self.is_replying_all == "False" else message.author.id
-        user_message = user_message + "Ne fais pas référence à ce message dans ta réponse et suis cette règle : N'oublie pas de répondre avec ta personnalité actuelle."
+        user_message_rule = user_message + "Ne fais pas référence à ce message dans ta réponse et suis cette règle : N'oublie pas de répondre avec ta personnalité actuelle et exagère là pour qu'on puisse la reconnaître dans ta réponse."
         try:
-            response = await self.handle_response(user_message)
+            response = await self.handle_response(user_message_rule)
             response_content = f'> **{user_message}** - <@{str(author)}> \n\n{response}'
             await send_split_message(self, response_content, message)
         except Exception as e:
