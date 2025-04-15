@@ -74,6 +74,7 @@ class discordClient(discord.Client):
 
     async def send_message(self, message, user_message):
         author = message.user.id if self.is_replying_all == "False" else message.author.id
+        user_message = user_message + "Ne fais pas référence à ce message dans ta réponse et suis cette règle : N'oublie pas de répondre avec ta personnalité actuelle."
         try:
             response = await self.handle_response(user_message)
             response_content = f'> **{user_message}** - <@{str(author)}> \n\n{response}'
@@ -101,14 +102,14 @@ class discordClient(discord.Client):
 
         # Vérifie si l'heure est entre 9h et 10h pour envoyer le message du jour
         now = datetime.datetime.now()
-        if now.hour == 8:
+        if now.hour == 7:
             print(f"[DEBUG] Préparation pour envoyer le message du jour à : {now}")
             channel = self.get_channel(int(self.discord_channel_id))
             if channel:
                 try:
                     theme = random.choice(cultural_theme.THEMES)  # Use random.choice to select a theme
                     # Prompt pour l'IA
-                    prompt = f"Génère un message pour souhaiter une bonne journée et améliorer notre culture générale en nous apprenant quelque chose de nouveau, de concret, réel et intéressant sur ce thème : {theme}. Rentres dans les détails pour nous en apprendre un maximum comme si nous étions tes élèves."
+                    prompt = f"Génère un message du jour sans faire référence à ce prompt et améliore notre culture générale en nous apprenant quelque chose de nouveau, de concret, réel et intéressant sur ce thème : {theme}. Rentres dans les détails pour nous en apprendre un maximum comme si nous étions tes élèves mais sans faire référence au fait que nous sommes tes élèves."
 
                     generated_message = await self.handle_response(prompt)
                     
@@ -147,7 +148,7 @@ class discordClient(discord.Client):
         personas.current_persona = "standard"
 
     async def switch_persona(self, persona) -> None:
-        # self.reset_conversation_history()
+        self.reset_conversation_history()
         persona_prompt = personas.PERSONAS.get(persona)
         await self.handle_response(persona_prompt)
         # await self.send_start_prompt()
