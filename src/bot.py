@@ -223,6 +223,34 @@ def run_discord_bot():
             logger.info(
                 f'{username} a demandé une personnalité indisponible : `{persona}`')
 
+    @discordClient.tree.command(name="create_persona", description="Ajouter une personnalité custom")
+    async def create_persona(interaction: discord.Interaction, name: str, description: str):
+        if interaction.user == discordClient.user:
+            return
+
+        await interaction.response.defer(thinking=True)
+        username = str(interaction.user)
+        logger.info(
+            f"\x1b[31m{username}\x1b[0m : '/create_persona [{name}] - [{description}]'"
+        )
+
+        if name in personas.PERSONAS:
+            await interaction.followup.send(
+                f"> **ERREUR : Une personnalité avec le nom `{name}` existe déjà.**")
+            logger.warning(f"Personality `{name}` already exists.")
+        else:
+            try:
+                personas.PERSONAS[name] = description
+                personas.current_persona = name
+                await discordClient.switch_persona(name)
+                await interaction.followup.send(
+                    f"> **INFO : Personnalité `{name}` ajoutée et activée avec succès !**\nDescription : {description}")
+                logger.info(f"Custom persona `{name}` added and activated successfully.")
+            except Exception as e:
+                await interaction.followup.send(
+                    "> **ERREUR : Une erreur est survenue lors de l'ajout de la personnalité.**")
+                logger.exception(f"Erreur lors de l'ajout de la personnalité `{name}` : {e}")
+
     # @discordClient.tree.command(DatabaseCommands(name="db", description='Access to database functionalities'))
 
     @discordClient.event

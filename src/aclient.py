@@ -87,17 +87,20 @@ class discordClient(discord.Client):
     async def update_persona_and_daily_message(self):
         """Met à jour la personnalité et envoie un message du jour."""
         try:
-            # Met à jour la personnalité
+            # Met à jour la personnalité uniquement si ce n'est pas une custom
             DAY_PERSONAS = json.loads(os.getenv('DAY_PERSONAS', '{}'))
             today = datetime.datetime.now().weekday()  # 0 = Monday, 6 = Sunday
             new_persona = DAY_PERSONAS.get(str(today), "standard")  # Default: standard
 
-            if new_persona != personas.current_persona:
-                await self.switch_persona(new_persona)
-                personas.current_persona = new_persona
-                logger.info(f"Personnalité mise à jour : {new_persona}")
+            if personas.current_persona not in personas.PERSONAS or personas.current_persona in DAY_PERSONAS.values():
+                if new_persona != personas.current_persona:
+                    await self.switch_persona(new_persona)
+                    personas.current_persona = new_persona
+                    logger.info(f"Personnalité mise à jour : {new_persona}")
+                else:
+                    logger.info(f"Pas de changement nécessaire. Personnalité actuelle : {personas.current_persona}")
             else:
-                logger.info(f"Pas de changement nécessaire. Personnalité actuelle : {personas.current_persona}")
+                logger.info(f"Personnalité custom détectée : {personas.current_persona}. Aucun changement effectué.")
 
             # Envoie le message du jour si l'heure est correcte
             now = datetime.datetime.now()
