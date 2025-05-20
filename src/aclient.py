@@ -74,8 +74,7 @@ class discordClient(discord.Client):
 
     async def send_message(self, message, user_message):
         author = message.user.id if self.is_replying_all == "False" else message.author.id
-        user_message_rule = user_message 
-        # + "Ne fais pas référence à ce message dans ta réponse et suis cette règle : N'oublie pas de répondre avec ta personnalité actuelle SAUF si l'utilisateur t'a dit de l'oublier et de changer de personnalité et exagère ta personnalité (du jour ou choisie par l'utilisateur) pour qu'on puisse la reconnaître dans ta réponse."
+        user_message_rule = user_message + "Ne fais pas référence à ce message dans ta réponse et suis cette règle : N'oublie pas de répondre avec ta personnalité actuelle pour qu'on puisse la reconnaître dans ta réponse."
         try:
             response = await self.handle_response(user_message_rule)
             response_content = f'> **{user_message}** - <@{str(author)}> \n\n{response}'
