@@ -132,32 +132,40 @@ class discordClient(discord.Client):
         except Exception as e:
             logger.exception(f"Erreur lors de l'envoi du prompt initial : {e}")
 
-    def reset_conversation_history(self):
-        self.conversation_history = []
-        personas.current_persona = "standard"
+    def reset_conversation_history(self, force_reset=False):
+        """Réinitialise l'historique de conversation uniquement si nécessaire."""
+        if force_reset or not self.conversation_history:
+            self.conversation_history = []
+            personas.current_persona = "standard"
+            logger.info("Historique de conversation réinitialisé.")
+        else:
+            logger.debug("Réinitialisation ignorée car l'historique existe déjà.")
 
     async def switch_persona(self, persona) -> None:
-        self.reset_conversation_history()
+        """Change la personnalité et réinitialise l'historique si nécessaire."""
+        self.reset_conversation_history(force_reset=True)
         persona_prompt = personas.PERSONAS.get(persona)
         await self.handle_response(persona_prompt)
         # await self.send_start_prompt()
 
     async def handle_response(self, user_message) -> str:
-            self.conversation_history.append({'role': 'user', 'content': user_message})
-            if len(self.conversation_history) > 26:
-                del self.conversation_history[4:6]
+        """Gère la réponse en utilisant l'historique de conversation."""
+        self.conversation_history.append({'role': 'user', 'content': user_message})
+        if len(self.conversation_history) > 26:
+            del self.conversation_history[4:6]  # Réduire l'historique sans le vider complètement
 
-            if os.getenv("OPENAI_ENABLED") == "False":
-                async_create = sync_to_async(self.chatBot.chat.completions.create, thread_sensitive=True)
-                response: ChatCompletion = await async_create(model=self.chatModel, messages=self.conversation_history)
-            else:
-                response = await self.openai_client.chat.completions.create(
-                    model=self.chatModel,
-                    messages=self.conversation_history
-                )
+        if os.getenv("OPENAI_ENABLED") == "False":
+            async_create = sync_to_async(self.chatBot.chat.completions.create, thread_sensitive=True)
+            response: ChatCompletion = await async_create(model=self.chatModel, messages=self.conversation_history)
+        else:
+            response = await self.openai_client.chat.completions.create(
+                model=self.chatModel,
+                messages=self.conversation_history
+            )
 
-            bot_response = response.choices[0].message.content
-            self.conversation_history.append({'role': 'assistant', 'content': bot_response})
+        bot_response = response.choices[0].message.content
+        self.conversation_history.append({'role': 'assistant', 'content': bot_response})
+        logger.debug(f"Historique mis à jour : {self.conversation_history}")
 
-            return bot_response
+        return bot_response
 discordClient = discordClient()
