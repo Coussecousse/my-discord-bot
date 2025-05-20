@@ -143,7 +143,7 @@ class discordClient(discord.Client):
 
     async def switch_persona(self, persona) -> None:
         """Change la personnalité et réinitialise l'historique si nécessaire."""
-        self.reset_conversation_history(force_reset=True)
+        # self.reset_conversation_history(force_reset=True)
         persona_prompt = personas.PERSONAS.get(persona)
         await self.handle_response(persona_prompt)
         # await self.send_start_prompt()
