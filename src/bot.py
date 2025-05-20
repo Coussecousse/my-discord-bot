@@ -144,7 +144,7 @@ def run_discord_bot():
   - `fri` : Vendredi - Madame Kirma est une fêtarde surexcitée, débordante d’énergie et prête à célébrer.
   - `sat` : Samedi - Madame Kirma est épuisée d’avoir trop fait la fête vendredi. Elle est lente, soupire beaucoup, et se plaint.
   - `sun` : Dimanche - Madame Kirma est une québécoise aussi aimable qu'une porte de prison.
-- `/create_persona [name] [description]` Ajoute une personnalité custom et l'active immédiatement.
+- `/createpersona [name] [description]` Ajoute une personnalité custom et l'active immédiatement.
 - `/private` Je passe en mode privé (coquinou).
 - `/public` Je passe en mode public.
 - `/replyall` Bascule entre le mode replyAll et le mode par défaut.
@@ -223,15 +223,15 @@ def run_discord_bot():
             logger.info(
                 f'{username} a demandé une personnalité indisponible : `{persona}`')
 
-    @discordClient.tree.command(name="create_persona", description="Ajouter une personnalité custom")
-    async def create_persona(interaction: discord.Interaction, name: str, description: str):
+    @discordClient.tree.command(name="createpersona", description="Ajouter une personnalité custom")
+    async def createPersona(interaction: discord.Interaction, name: str, description: str):
         if interaction.user == discordClient.user:
             return
 
         await interaction.response.defer(thinking=True)
         username = str(interaction.user)
         logger.info(
-            f"\x1b[31m{username}\x1b[0m : '/create_persona [{name}] - [{description}]'"
+            f"\x1b[31m{username}\x1b[0m : '/createpersona [{name}] - [{description}]'"
         )
 
         if name in personas.PERSONAS:
