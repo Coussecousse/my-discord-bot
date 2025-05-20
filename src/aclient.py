@@ -55,18 +55,18 @@ class discordClient(discord.Client):
         self.message_queue = asyncio.Queue()
 
     async def process_messages(self):
+        """Traite les messages en file d'attente."""
         while True:
-            if self.current_channel is not None:
-                while not self.message_queue.empty():
-                    async with self.current_channel.typing():
-                        message, user_message = await self.message_queue.get()
-                        try:
+            try:
+                if self.current_channel is not None:
+                    while not self.message_queue.empty():
+                        async with self.current_channel.typing():
+                            message, user_message = await self.message_queue.get()
                             await self.send_message(message, user_message)
-                        except Exception as e:
-                            logger.exception(f"Error while processing message: {e}")
-                        finally:
                             self.message_queue.task_done()
-            await asyncio.sleep(1)
+                await asyncio.sleep(1)
+            except Exception as e:
+                logger.exception(f"Erreur dans process_messages : {e}")
 
     async def enqueue_message(self, message, user_message):
         await message.response.defer(ephemeral=self.isPrivate) if self.is_replying_all == "False" else None
@@ -84,64 +84,53 @@ class discordClient(discord.Client):
 
     @tasks.loop(minutes=60)
     async def update_persona_and_daily_message(self):
-        # Met à jour la personnalité
-        DAY_PERSONAS = json.loads(os.getenv('DAY_PERSONAS', '{}'))
-        today = datetime.datetime.now().weekday()  # 0 = Monday, 6 = Sunday
-        new_persona = DAY_PERSONAS.get(str(today), "standard")  # Default: standard
+        """Met à jour la personnalité et envoie un message du jour."""
+        try:
+            # Met à jour la personnalité
+            DAY_PERSONAS = json.loads(os.getenv('DAY_PERSONAS', '{}'))
+            today = datetime.datetime.now().weekday()  # 0 = Monday, 6 = Sunday
+            new_persona = DAY_PERSONAS.get(str(today), "standard")  # Default: standard
 
-        # Vérifie et met à jour la personnalité
-        if new_persona != personas.current_persona:
-            try:
+            if new_persona != personas.current_persona:
                 await self.switch_persona(new_persona)
                 personas.current_persona = new_persona
-                print(f"[INFO] Personnalité mise à jour : {new_persona}")
-            except Exception as e:
-                print(f"[ERREUR] Impossible de changer de personnalité : {e}")
-        else:
-            print(f"[INFO] Pas de changement nécessaire. Personnalité actuelle : {personas.current_persona}")
-
-        # Vérifie si l'heure est entre 9h et 10h pour envoyer le message du jour
-        now = datetime.datetime.now()
-        if now.hour == 7:
-            print(f"[DEBUG] Préparation pour envoyer le message du jour à : {now}")
-            channel = self.get_channel(int(self.discord_channel_id))
-            if channel:
-                try:
-                    theme = random.choice(cultural_theme.THEMES)  # Use random.choice to select a theme
-                    # Prompt pour l'IA
-                    prompt = f"Génère un message du jour sans faire référence à ce prompt et améliore notre culture générale en nous apprenant quelque chose de nouveau, de concret, réel et intéressant sur ce thème : {theme}. Rentres dans les détails pour nous en apprendre un maximum comme si nous étions tes élèves mais sans faire référence au fait que nous sommes tes élèves."
-
-                    generated_message = await self.handle_response(prompt)
-                    
-                    # Envoie le message généré dans le canal
-                    await channel.send(generated_message)
-                    print(f"[INFO] Message du jour envoyé : {generated_message}")
-                except Exception as e:
-                    logger.exception(f"Erreur lors de l'envoi du message du jour : {e}")
+                logger.info(f"Personnalité mise à jour : {new_persona}")
             else:
-                logger.error(f"Canal non trouvé : {self.discord_channel_id}")
-        else:
-            print("[DEBUG] Pas l'heure d'envoyer le message du jour.")
+                logger.info(f"Pas de changement nécessaire. Personnalité actuelle : {personas.current_persona}")
+
+            # Envoie le message du jour si l'heure est correcte
+            now = datetime.datetime.now()
+            if now.hour == 7:  # Vérifie si l'heure est 7h
+                channel = self.get_channel(int(self.discord_channel_id))
+                if channel:
+                    theme = random.choice(cultural_theme.THEMES)
+                    prompt = f"Génère un message du jour sur le thème : {theme}."
+                    generated_message = await self.handle_response(prompt)
+                    await channel.send(generated_message)
+                    logger.info(f"Message du jour envoyé : {generated_message}")
+                else:
+                    logger.error(f"Canal non trouvé : {self.discord_channel_id}")
+            else:
+                logger.debug("Pas l'heure d'envoyer le message du jour.")
+        except Exception as e:
+            logger.exception(f"Erreur dans update_persona_and_daily_message : {e}")
 
     async def send_start_prompt(self):
+        """Envoie le prompt initial et démarre les tâches nécessaires."""
         try:
-            await self.update_persona_and_daily_message()
             if not self.update_persona_and_daily_message.is_running():
-                print("DEBUG: Starting update_persona_and_daily_message loop")
+                logger.debug("Démarrage de la tâche update_persona_and_daily_message")
                 self.update_persona_and_daily_message.start()
 
             if self.starting_prompt and self.discord_channel_id:
                 channel = self.get_channel(int(self.discord_channel_id))
-                logger.info(f"Sending system prompt with size {len(self.starting_prompt)}")
-
                 response = await self.handle_response(self.starting_prompt)
-                await channel.send(f"{response}")
-
-                logger.info(f"System prompt response: {response}")
+                await channel.send(response)
+                logger.info(f"Prompt initial envoyé : {response}")
             else:
-                logger.info("No starting prompt or Discord channel configured. Skipping.")
+                logger.info("Aucun prompt initial ou canal Discord configuré.")
         except Exception as e:
-            logger.exception(f"Error while sending system prompt: {e}")
+            logger.exception(f"Erreur lors de l'envoi du prompt initial : {e}")
 
     def reset_conversation_history(self):
         self.conversation_history = []
