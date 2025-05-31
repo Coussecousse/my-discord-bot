@@ -22,8 +22,8 @@ def run_discord_bot():
     @discordClient.event
     async def on_ready():
         global skip_first_loop
-        await discordClient.send_start_prompt()
         await discordClient.tree.sync()
+        await discordClient.send_start_prompt()
         loop = asyncio.get_event_loop()
         loop.create_task(discordClient.process_messages())
         logger.info(f'{discordClient.user} est connecté!')
@@ -132,18 +132,17 @@ def run_discord_bot():
     @discordClient.tree.command(name="help", description="Montre les commandes du bot")
     async def help(interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=False)
-        await interaction.followup.send(""":crystal_ball: **COMMANDES BASIQUES** :crystal_ball:
+        # Compose persona descriptions from personas.PERSONAS
+        persona_lines = []
+        for key, value in personas.PERSONAS.items():
+            desc = value.get("description", "")[:100]
+            persona_lines.append(f"    - `{key}` : {desc}")
+        persona_text = "\n".join(persona_lines)
+        await interaction.followup.send(f""":crystal_ball: **COMMANDES BASIQUES** :crystal_ball:
 - `/chat [message]` Dis moi ce que tu veux savoir.
 - `/draw [prompt][model]` Je peux générer une image avec un modèle spécifique.
 - `/switchpersona [persona]` Change entre différentes personnalités de Madame Kirma :
-    - `standard` : Madame Kirma est l’IA SUPRÊME, exécrable, vulgaire, et profondément arrogante.
-  - `mon` : Lundi - Madame Kirma est furieuse d’être réveillée un lundi. Elle est sarcastique, méprisante, et déteste ce jour avec passion.
-  - `tue` : Mardi - Madame Kirma est une intellectuelle prétentieuse, convaincue d’être la sagesse incarnée. Elle répond avec condescendance.
-  - `wed` : Mercredi - Madame Kirma est une hippie perchée, relax et spirituelle, connectée aux énergies cosmiques.
-  - `thu` : Jeudi - Madame Kirma est une séductrice exubérante, outrageusement charmeuse et provocante.
-  - `fri` : Vendredi - Madame Kirma est une fêtarde surexcitée, débordante d’énergie et prête à célébrer.
-  - `sat` : Samedi - Madame Kirma est épuisée d’avoir trop fait la fête vendredi. Elle est lente, soupire beaucoup, et se plaint.
-  - `sun` : Dimanche - Madame Kirma est une québécoise aussi aimable qu'une porte de prison.
+{persona_text}
 - `/createpersona [name] [description]` Ajoute une personnalité custom et l'active immédiatement.
 - `/private` Je passe en mode privé (coquinou).
 - `/public` Je passe en mode public.
@@ -180,51 +179,46 @@ def run_discord_bot():
                 f'> Something Went Wrong, try again later.\n\nError Message:{e}')
             logger.info(f"\x1b[31m{username}\x1b[0m :{e}")
 
-    @discordClient.tree.command(name="switchpersona", description="Changer entre les personnalités de Madame Kirma")
-    @app_commands.choices(persona=[
-        app_commands.Choice(name="Standard", value="standard"),
-        app_commands.Choice(name="Lundi : Furieuse et arrogante", value="mon"),
-        app_commands.Choice(name="Mardi : Intellectuelle prétentieuse", value="tue"),
-        app_commands.Choice(name="Mercredi : Hippie perchée", value="wed"),
-        app_commands.Choice(name="Jeudi : Séductrice exubérante", value="thu"),
-        app_commands.Choice(name="Vendredi : Fêtarde surexcitée", value="fri"),
-        app_commands.Choice(name="Samedi : Épuisée d'après-soirée", value="sat"),
-        app_commands.Choice(name="Dimanche : Blasée du lundi", value="sun"),
-    ])
+    # Générer dynamiquement les choix pour les personas à partir de personas.PERSONAS
+    all_personas = [
+        app_commands.Choice(
+            name=f"{key.capitalize()} : {value['description'][:50]}...",
+            value=key
+        )
+        for key, value in personas.PERSONAS.items()
+    ]
+
+    @discordClient.tree.command(
+        name="switchpersona",
+        description="Changer entre les personnalités de Madame Kirma"
+    )
+    @app_commands.describe(persona="Choisissez une personnalité parmi la liste")
+    @app_commands.choices(persona=all_personas)
     async def switchpersona(interaction: discord.Interaction, persona: app_commands.Choice[str]):
-        if interaction.user == discordClient.user:
+        # On récupère la valeur réelle du choix
+        persona_value = persona.value if isinstance(persona, app_commands.Choice) else persona
+
+        # Vérifier si la persona existe
+        if persona_value not in personas.PERSONAS:
+            await interaction.response.send_message(
+                f"> **ERREUR : La personnalité `{persona_value}` n'est pas disponible. 😿**", ephemeral=True)
             return
 
         await interaction.response.defer(thinking=True)
-        username = str(interaction.user)
-        channel = str(interaction.channel)
-        logger.info(
-            f"\x1b[31m{username}\x1b[0m : '/switchpersona [{persona.value}]' ({channel})"
-        )
-
-        persona = persona.value
-
-        if persona == personas.current_persona:
+        try:
+            # Correction : passe uniquement persona_value
+            await discordClient.switch_persona(persona_value)
+            personas.current_persona = persona_value
             await interaction.followup.send(
-                f"> **ATTENTION : La personnalité `{persona}` est déjà active.**")
-        elif persona in personas.PERSONAS:
-            try:
-                await discordClient.switch_persona(persona)
-                personas.current_persona = persona
-                await interaction.followup.send(
-                    f"> **INFO : Personnalité changée en `{persona}` avec succès.**")
-            except Exception as e:
-                await interaction.followup.send(
-                    "> **ERREUR : Une erreur est survenue, veuillez réessayer plus tard.**")
-                logger.exception(f"Erreur lors du changement de personnalité : {e}")
-        else:
+                f"> **INFO : Personnalité changée en `{persona_value}` avec succès.**\nDescription : {personas.PERSONAS[persona_value]['description']}")
+        except Exception as e:
             await interaction.followup.send(
-                f"> **ERREUR : La personnalité `{persona}` n'est pas disponible. 😿**")
-            logger.info(
-                f'{username} a demandé une personnalité indisponible : `{persona}`')
+                "> **ERREUR : Une erreur est survenue, veuillez réessayer plus tard.**")
+            logger.exception(f"Erreur lors du changement de personnalité : {e}")
+
 
     @discordClient.tree.command(name="createpersona", description="Ajouter une personnalité custom")
-    async def createPersona(interaction: discord.Interaction, name: str, description: str):
+    async def createPersona(interaction: discord.Interaction, name: str, description: str, prompt: str):
         if interaction.user == discordClient.user:
             return
 
@@ -240,7 +234,11 @@ def run_discord_bot():
             logger.warning(f"Personality `{name}` already exists.")
         else:
             try:
-                personas.PERSONAS[name] = description
+                # Add the new persona to the personas module (respect structure)
+                with open("src/personas.py", "a", encoding="utf-8") as f:
+                    f.write(f'\nPERSONAS["{name}"] = {{"description": """{description}""", "prompt": """{prompt}"""}}\n')
+
+                personas.PERSONAS[name] = {"description": description, "prompt": prompt}
                 personas.current_persona = name
                 await discordClient.switch_persona(name)
                 await interaction.followup.send(

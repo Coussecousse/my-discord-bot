@@ -86,15 +86,18 @@ class discordClient(discord.Client):
     async def update_persona_and_daily_message(self):
         """Met à jour la personnalité et envoie un message du jour."""
         try:
-            # Met à jour la personnalité uniquement si ce n'est pas une custom
             DAY_PERSONAS = json.loads(os.getenv('DAY_PERSONAS', '{}'))
+            weekday_personas = {"mon", "tue", "wed", "thu", "fri", "sat", "sun"}
             today = datetime.datetime.now().weekday()  # 0 = Monday, 6 = Sunday
             new_persona = DAY_PERSONAS.get(str(today), "standard")  # Default: standard
 
-            if personas.current_persona not in personas.PERSONAS or personas.current_persona in DAY_PERSONAS.values():
-                if new_persona != personas.current_persona:
+            # Met à jour la personnalité uniquement si la personnalité actuelle est "standard" ou un jour de la semaine
+            if personas.current_persona in weekday_personas or personas.current_persona == "standard":
+                if personas.current_persona != new_persona:
                     await self.switch_persona(new_persona)
                     personas.current_persona = new_persona
+                    persona_desc = personas.PERSONAS.get(new_persona, {}).get("description", "")
+                    logger.info(f"Description de la personnalité : {persona_desc}")
                     logger.info(f"Personnalité mise à jour : {new_persona}")
                 else:
                     logger.info(f"Pas de changement nécessaire. Personnalité actuelle : {personas.current_persona}")
@@ -127,7 +130,10 @@ class discordClient(discord.Client):
 
             if self.starting_prompt and self.discord_channel_id:
                 channel = self.get_channel(int(self.discord_channel_id))
-                response = await self.handle_response(self.starting_prompt)
+                # Ajout : inclure la description de la persona courante dans le prompt initial
+                persona_desc = personas.PERSONAS.get(personas.current_persona, {}).get("description", "")
+                prompt_with_desc = f"**Description de la personnalité actuelle :** {persona_desc}\n\n{self.starting_prompt}"
+                response = await self.handle_response(prompt_with_desc)
                 await channel.send(response)
                 logger.info(f"Prompt initial envoyé : {response}")
             else:
@@ -147,7 +153,10 @@ class discordClient(discord.Client):
     async def switch_persona(self, persona) -> None:
         """Change la personnalité et réinitialise l'historique si nécessaire."""
         self.reset_conversation_history(force_reset=True)
-        persona_prompt = personas.PERSONAS.get(persona)
+        persona_prompt = personas.PERSONAS.get(persona, {}).get("prompt", "")
+        # Ajout : log la description de la nouvelle persona lors du switch
+        persona_desc = personas.PERSONAS.get(persona, {}).get("description", "")
+        logger.info(f"Changement de personnalité vers : {persona} - {persona_desc}")
         await self.handle_response(persona_prompt)
         # await self.send_start_prompt()
 
