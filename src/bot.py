@@ -17,6 +17,14 @@ from src.db.db_commands import DatabaseCommands
 # Initialize a flag to skip the first loop iteration
 skip_first_loop = False
 
+# Informations sur la dernière mise à jour
+LAST_UPDATE_DATE = "2024-05-31"
+LAST_UPDATE_SUMMARY = (
+    "- Génération dynamique des choix de personnalités à partir de personas.py\n"
+    "- Correction du changement de personnalité\n"
+    "- Ajout automatique de la description lors de la création de nouvelles personnalités\n"
+)
+
 def run_discord_bot():            
 
     @discordClient.event
@@ -129,6 +137,14 @@ def run_discord_bot():
         logger.warning(
             f"\x1b[31m{discordClient.chatModel} bot has been successfully reset\x1b[0m")
 
+    @discordClient.tree.command(name="lastupdate", description="Affiche la date et le contenu de la dernière mise à jour du bot")
+    async def lastupdate(interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        await interaction.followup.send(
+            f"**Dernière mise à jour :** {LAST_UPDATE_DATE}\n"
+            f"**Changements :**\n{LAST_UPDATE_SUMMARY}"
+        )
+
     @discordClient.tree.command(name="help", description="Montre les commandes du bot")
     async def help(interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=False)
@@ -140,14 +156,14 @@ def run_discord_bot():
         persona_text = "\n".join(persona_lines)
         await interaction.followup.send(f""":crystal_ball: **COMMANDES BASIQUES** :crystal_ball:
 - `/chat [message]` Dis moi ce que tu veux savoir.
-- `/draw [prompt][model]` Je peux générer une image avec un modèle spécifique.
 - `/switchpersona [persona]` Change entre différentes personnalités de Madame Kirma :
 {persona_text}
-- `/createpersona [name] [description]` Ajoute une personnalité custom et l'active immédiatement.
+- `/createpersona [name] [description] [prompt]` Ajoute une personnalité custom et l'active immédiatement.
 - `/private` Je passe en mode privé (coquinou).
 - `/public` Je passe en mode public.
 - `/replyall` Bascule entre le mode replyAll et le mode par défaut.
-- `/reset` Réinitialise l'historique de la conversation.                        
+- `/reset` Réinitialise l'historique de la conversation.
+- `/lastupdate` Affiche la date et le contenu de la dernière mise à jour du bot.
 """)
         logger.info(
             "\x1b[31mSomeone needs help!\x1b[0m")
