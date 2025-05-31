@@ -18,8 +18,9 @@ from src.db.db_commands import DatabaseCommands
 skip_first_loop = False
 
 # Informations sur la dernière mise à jour
-LAST_UPDATE_DATE = "2024-05-31"
+LAST_UPDATE_DATE = "2025-05-31"
 LAST_UPDATE_SUMMARY = (
+    "- Ajout de la commande /lastupdate et intégration dans /help\n"
     "- Génération dynamique des choix de personnalités à partir de personas.py\n"
     "- Correction du changement de personnalité\n"
     "- Ajout automatique de la description lors de la création de nouvelles personnalités\n"
@@ -264,6 +265,17 @@ def run_discord_bot():
                 await interaction.followup.send(
                     "> **ERREUR : Une erreur est survenue lors de l'ajout de la personnalité.**")
                 logger.exception(f"Erreur lors de l'ajout de la personnalité `{name}` : {e}")
+
+    # @discordClient.tree.command(name="clearchannel", description="Efface tous les messages du canal courant (si permissions)")
+    # async def clearchannel(interaction: discord.Interaction):
+    #     await interaction.response.defer(ephemeral=True)
+    #     channel = interaction.channel
+    #     try:
+    #         deleted = await channel.purge(limit=100)
+    #         await interaction.followup.send(f"> **INFO : {len(deleted)} messages ont été supprimés dans ce canal.**")
+    #     except Exception as e:
+    #         await interaction.followup.send("> **ERREUR : Impossible de supprimer les messages (permissions manquantes ?).**")
+    #         logger.exception(f"Erreur lors de la suppression des messages : {e}")
 
     # @discordClient.tree.command(DatabaseCommands(name="db", description='Access to database functionalities'))
 
