@@ -32,10 +32,21 @@ def run_discord_bot():
     async def on_ready():
         global skip_first_loop
         await discordClient.tree.sync()
+        # Création des bases pour tous les serveurs déjà présents
+        for guild in discordClient.guilds:
+            logger.info(f"[DB] Initialisation de la base pour le serveur {guild.name} ({guild.id})")
+            await discordClient.create_database_for_guild(guild)
         await discordClient.send_start_prompt()
         loop = asyncio.get_event_loop()
         loop.create_task(discordClient.process_messages())
         logger.info(f'{discordClient.user} est connecté!')
+
+
+    @discordClient.event
+    async def on_guild_join(guild):
+        logger.info(f"Nouveau serveur rejoint : {guild.name} ({guild.id})")
+        logger.info(f"[DB] Initialisation de la base pour le serveur {guild.name} ({guild.id})")
+        await discordClient.create_database_for_guild(guild)
 
 
     @discordClient.tree.command(name="chat", description="Discute avec moi")

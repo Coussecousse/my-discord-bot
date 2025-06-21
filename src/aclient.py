@@ -22,6 +22,7 @@ from g4f.Provider import RetryProvider, OpenaiChat, Aichatos, Liaobots  # gpt-4
 from g4f.Provider import Blackbox  # gpt-3.5-turbo
 
 from openai import AsyncOpenAI
+import asyncpg  # Ajout pour PostgreSQL
 
 g4f.debug.logging = True
 
@@ -31,6 +32,7 @@ class discordClient(discord.Client):
     def __init__(self) -> None:
         intents = discord.Intents.default()
         intents.message_content = True
+        intents.members = True  # Ajoute ceci
         super().__init__(intents=intents)
         self.tree = app_commands.CommandTree(self)
         self.chatBot = Client(
@@ -178,4 +180,45 @@ class discordClient(discord.Client):
         logger.debug(f"Historique mis à jour : {self.conversation_history}")
 
         return bot_response
+
+    async def create_database_for_guild(self, guild: discord.Guild):
+        """Crée une base PostgreSQL nommée selon l'id du serveur et une table Users, puis ajoute les membres du serveur."""
+        logger.info(f"[DB] Création/connexion à la base pour le serveur {guild.name} ({guild.id})")
+        db_user = os.getenv('PGUSER')
+        db_password = os.getenv('PGPASSWORD')
+        db_host = os.getenv('PGHOST', 'localhost')
+        db_port = os.getenv('PGPORT', '5432')
+        db_admin = os.getenv('PGADMINDB', 'postgres')
+        db_name = f"guild_{guild.id}"
+        # Connexion à la base d'administration
+        conn = await asyncpg.connect(user=db_user, password=db_password, database=db_admin, host=db_host, port=db_port)
+        db_exists = await conn.fetchval("SELECT 1 FROM pg_database WHERE datname = $1", db_name)
+        if not db_exists:
+            await conn.execute(f'CREATE DATABASE "{db_name}"')
+        await conn.close()
+        # Connexion à la base du serveur
+        guild_conn = await asyncpg.connect(user=db_user, password=db_password, database=db_name, host=db_host, port=db_port)
+        await guild_conn.execute('''
+            CREATE TABLE IF NOT EXISTS Users (
+                id SERIAL PRIMARY KEY,
+                discord_id BIGINT UNIQUE,
+                username TEXT,
+                score INTEGER DEFAULT 0
+            );
+        ''')
+        logger.info(f"[DB] Table Users créée/vérifiée pour {guild.name} ({guild.id})")
+        # Ajout des membres du serveur dans la table Users
+        await self.insert_guild_members(guild_conn, guild)
+        await guild_conn.close()
+
+    async def insert_guild_members(self, conn, guild):
+        """Ajoute tous les membres du serveur dans la table Users si non présents."""
+        for member in guild.members:
+            if not member.bot:
+                await conn.execute('''
+                    INSERT INTO Users (discord_id, username, score)
+                    VALUES ($1, $2, 0)
+                    ON CONFLICT (discord_id) DO NOTHING;
+                ''', member.id, str(member))
+        logger.info(f"[DB] Membres ajoutés/présents dans la table Users pour {guild.name} ({guild.id})")
 discordClient = discordClient()
