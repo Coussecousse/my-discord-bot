@@ -148,7 +148,7 @@ def run_discord_bot():
 
     @discordClient.tree.command(name="help", description="Montre les commandes du bot")
     async def help(interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=False)
+        await interaction.response.defer(ephemeral=True)
         # Compose persona descriptions from personas.PERSONAS
         persona_lines = []
         for key, value in personas.PERSONAS.items():
@@ -160,12 +160,13 @@ def run_discord_bot():
 - `/switchpersona [persona]` Change entre différentes personnalités de Madame Kirma :
 {persona_text}
 - `/createpersona [name] [description] [prompt]` Ajoute une personnalité custom et l'active immédiatement.
+- `/currentpersona` Affiche la personnalité actuellement active.
 - `/private` Je passe en mode privé (coquinou).
 - `/public` Je passe en mode public.
 - `/replyall` Bascule entre le mode replyAll et le mode par défaut.
 - `/reset` Réinitialise l'historique de la conversation.
 - `/lastupdate` Affiche la date et le contenu de la dernière mise à jour du bot.
-""")
+""", ephemeral=True)
         logger.info(
             "\x1b[31mSomeone needs help!\x1b[0m")
 
@@ -221,16 +222,16 @@ def run_discord_bot():
                 f"> **ERREUR : La personnalité `{persona_value}` n'est pas disponible. 😿**", ephemeral=True)
             return
 
-        await interaction.response.defer(thinking=True)
+        await interaction.response.defer(thinking=True, ephemeral=True)
         try:
             # Correction : passe uniquement persona_value
             await discordClient.switch_persona(persona_value)
             personas.current_persona = persona_value
             await interaction.followup.send(
-                f"> **INFO : Personnalité changée en `{persona_value}` avec succès.**\nDescription : {personas.PERSONAS[persona_value]['description']}")
+                f"> **INFO : Personnalité changée en `{persona_value}` avec succès.**\nDescription : {personas.PERSONAS[persona_value]['description']}", ephemeral=True)
         except Exception as e:
             await interaction.followup.send(
-                "> **ERREUR : Une erreur est survenue, veuillez réessayer plus tard.**")
+                "> **ERREUR : Une erreur est survenue, veuillez réessayer plus tard.**", ephemeral=True)
             logger.exception(f"Erreur lors du changement de personnalité : {e}")
 
 
@@ -239,7 +240,7 @@ def run_discord_bot():
         if interaction.user == discordClient.user:
             return
 
-        await interaction.response.defer(thinking=True)
+        await interaction.response.defer(thinking=True, ephemeral=True)
         username = str(interaction.user)
         logger.info(
             f"\x1b[31m{username}\x1b[0m : '/createpersona [{name}] - [{description}]'"
@@ -247,7 +248,7 @@ def run_discord_bot():
 
         if name in personas.PERSONAS:
             await interaction.followup.send(
-                f"> **ERREUR : Une personnalité avec le nom `{name}` existe déjà.**")
+                f"> **ERREUR : Une personnalité avec le nom `{name}` existe déjà.**", ephemeral=True)
             logger.warning(f"Personality `{name}` already exists.")
         else:
             try:
@@ -259,11 +260,11 @@ def run_discord_bot():
                 personas.current_persona = name
                 await discordClient.switch_persona(name)
                 await interaction.followup.send(
-                    f"> **INFO : Personnalité `{name}` ajoutée et activée avec succès !**\nDescription : {description}")
+                    f"> **INFO : Personnalité `{name}` ajoutée et activée avec succès !**\nDescription : {description}", ephemeral=True)
                 logger.info(f"Custom persona `{name}` added and activated successfully.")
             except Exception as e:
                 await interaction.followup.send(
-                    "> **ERREUR : Une erreur est survenue lors de l'ajout de la personnalité.**")
+                    "> **ERREUR : Une erreur est survenue lors de l'ajout de la personnalité.**", ephemeral=True)
                 logger.exception(f"Erreur lors de l'ajout de la personnalité `{name}` : {e}")
 
     # @discordClient.tree.command(name="clearchannel", description="Efface tous les messages du canal courant (si permissions)")
@@ -294,6 +295,14 @@ def run_discord_bot():
                     await discordClient.enqueue_message(message, user_message)
             else:
                 logger.exception("replying_all_discord_channel_id not found, please use the command `/replyall` again.")
+
+    @discordClient.tree.command(name="currentpersona", description="Affiche la personnalité actuellement active")
+    async def currentpersona(interaction: discord.Interaction):
+        persona = personas.current_persona
+        desc = personas.PERSONAS.get(persona, {}).get("description", "Aucune description disponible.")
+        await interaction.response.send_message(
+            f"> **Personnalité actuelle :** `{persona}`\nDescription : {desc}", ephemeral=True
+        )
 
     TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 
