@@ -110,7 +110,7 @@ class discordClient(discord.Client):
                 channel = self.get_channel(int(self.discord_channel_id))
                 if channel:
                     theme = random.choice(cultural_theme.THEMES)
-                    prompt = f"Génère un message du jour sur le thème : {theme}."
+                    prompt = f"Génère un message du jour qui nous apprend quelque chose au hasard sur le thème : {theme}."
                     generated_message = await self.handle_response(prompt)
                     await channel.send(generated_message)
                     logger.info(f"Message du jour envoyé : {generated_message}")
