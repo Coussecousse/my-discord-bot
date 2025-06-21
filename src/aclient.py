@@ -3,7 +3,8 @@ import discord
 import asyncio
 import datetime
 import json
-import random  # Add this import
+import random
+from datetime import datetime, timedelta
 
 from src import personas
 from src import cultural_theme
@@ -55,6 +56,7 @@ class discordClient(discord.Client):
             self.starting_prompt = f.read()
 
         self.message_queue = asyncio.Queue()
+        self.daily_quiz_state = {}  # {guild_id: {question, answer, deadline, winners}}
 
     async def process_messages(self):
         """Traite les messages en file d'attente."""
@@ -90,7 +92,7 @@ class discordClient(discord.Client):
         try:
             DAY_PERSONAS = json.loads(os.getenv('DAY_PERSONAS', '{}'))
             weekday_personas = {"mon", "tue", "wed", "thu", "fri", "sat", "sun"}
-            today = datetime.datetime.now().weekday()  # 0 = Monday, 6 = Sunday
+            today = datetime.now().weekday()  # 0 = Monday, 6 = Sunday
             new_persona = DAY_PERSONAS.get(str(today), "standard")  # Default: standard
 
             # Met à jour la personnalité uniquement si la personnalité actuelle est "standard" ou un jour de la semaine
@@ -107,7 +109,7 @@ class discordClient(discord.Client):
                 logger.info(f"Personnalité custom détectée : {personas.current_persona}. Aucun changement effectué.")
 
             # Envoie le message du jour si l'heure est correcte
-            now = datetime.datetime.now()
+            now = datetime.now()
             if now.hour == 7:  # Vérifie si l'heure est 7h
                 channel = self.get_channel(int(self.discord_channel_id))
                 if channel:
@@ -135,9 +137,9 @@ class discordClient(discord.Client):
                 # Ajout : inclure la description de la persona courante dans le prompt initial
                 persona_desc = personas.PERSONAS.get(personas.current_persona, {}).get("description", "")
                 prompt_with_desc = f"**Description de la personnalité actuelle :** {persona_desc}\n\n{self.starting_prompt}"
-                response = await self.handle_response(prompt_with_desc)
-                await channel.send(response)
-                logger.info(f"Prompt initial envoyé : {response}")
+                # response = await self.handle_response(prompt_with_desc)
+                # await channel.send(response)
+                # logger.info(f"Prompt initial envoyé : {response}")
             else:
                 logger.info("Aucun prompt initial ou canal Discord configuré.")
         except Exception as e:
@@ -221,4 +223,83 @@ class discordClient(discord.Client):
                     ON CONFLICT (discord_id) DO NOTHING;
                 ''', member.id, str(member))
         logger.info(f"[DB] Membres ajoutés/présents dans la table Users pour {guild.name} ({guild.id})")
-discordClient = discordClient()
+
+    def start_daily_quiz_task(self, guild):
+        if not hasattr(self, '_quiz_tasks'):
+            self._quiz_tasks = {}
+        if guild.id not in self._quiz_tasks:
+            @tasks.loop(hours=24)
+            async def daily_quiz():
+                now = datetime.now()
+                hour = random.randint(8, 22)
+                minute = random.randint(0, 59)
+                next_quiz_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+                logger.info(f"[QUIZ] Prochain quiz pour {guild.name} ({guild.id}) prévu à {next_quiz_time.strftime('%Y-%m-%d %H:%M:%S')}")
+                if next_quiz_time < now:
+                    next_quiz_time += timedelta(days=1)
+                wait_seconds = (next_quiz_time - now).total_seconds()
+                await asyncio.sleep(wait_seconds)
+                # Générer une énigme et sa réponse via l'IA
+                prompt = "Génère une énigme originale (pas une devinette connue) et donne la réponse. Format : Question: ... Réponse: ..."
+                ia_response = await self.handle_response(prompt)
+                # Extraction question/réponse
+                question, answer = None, None
+                for line in ia_response.splitlines():
+                    if line.lower().startswith("question:"):
+                        question = line.split(":", 1)[1].strip()
+                    if line.lower().startswith("réponse:") or line.lower().startswith("reponse:"):
+                        answer = line.split(":", 1)[1].strip()
+                if not question or not answer:
+                    logger.error(f"[QUIZ] Échec extraction énigme IA : {ia_response}")
+                    return  # Ne lance pas le quiz si extraction échouée
+                deadline = datetime.now() + timedelta(hours=1)
+                self.daily_quiz_state[guild.id] = {
+                    "question": question,
+                    "answer": answer.lower(),
+                    "deadline": deadline,
+                    "winners": set()
+                }
+                logger.info(f"[QUIZ] Énigme générée pour {guild.name} ({guild.id}) : {question}")
+                logger.info(f"[QUIZ] Réponse attendue : {answer}")
+                channel = self.get_channel(int(self.discord_channel_id))
+                if channel:
+                    await channel.send(f"🧩 **Énigme du jour !** 🧩\n{question}\nVous avez 1h pour répondre avec /quiz [réponse] !")
+                else:
+                    logger.error(f"[QUIZ] Canal non trouvé : {self.discord_channel_id}")
+            self._quiz_tasks[guild.id] = daily_quiz
+            daily_quiz.start()
+
+    async def check_quiz_answer(self, guild, user_id, username, answer):
+        state = self.daily_quiz_state.get(guild.id)
+        logger.info(f"[QUIZ] {username} ({user_id}) tente la réponse '{answer}' pour {guild.name} ({guild.id})")
+        if not state:
+            logger.info(f"[QUIZ] Aucune énigme en cours pour {guild.name} ({guild.id})")
+            return False, "Aucune énigme en cours."
+        if datetime.now() > state["deadline"]:
+            logger.info(f"[QUIZ] Temps écoulé pour l'énigme du jour ({guild.name} - {guild.id})")
+            return False, "Le temps est écoulé pour cette énigme."
+        if user_id in state["winners"]:
+            logger.info(f"[QUIZ] {username} ({user_id}) a déjà répondu correctement aujourd'hui ({guild.name} - {guild.id})")
+            return False, "Tu as déjà répondu correctement à l'énigme du jour !"
+
+        # Nettoie la réponse attendue et la réponse donnée pour la comparaison
+        expected_answer = state["answer"].strip().lower().rstrip(".")
+        user_answer = answer.strip().lower().rstrip(".")
+        logger.info(f"[QUIZ] Réponse attendue : '{expected_answer}' pour {guild.name} ({guild.id})")
+        logger.info(f"[QUIZ] Réponse donnée (raw) : '{answer}'")
+        logger.info(f"[QUIZ] Réponse donnée (nettoyée) : '{user_answer}'")
+        logger.info(f"[QUIZ] Comparaison : '{user_answer}' == '{expected_answer}' ?")
+        if user_answer == expected_answer:
+            state["winners"].add(user_id)
+            # Ajoute 10 points dans la BDD
+            db_user = os.getenv('PGUSER')
+            db_password = os.getenv('PGPASSWORD')
+            db_host = os.getenv('PGHOST', 'localhost')
+            db_port = os.getenv('PGPORT', '5432')
+            db_name = f"guild_{guild.id}"
+            conn = await asyncpg.connect(user=db_user, password=db_password, database=db_name, host=db_host, port=db_port)
+            await conn.execute("UPDATE Users SET score = score + 10 WHERE discord_id = $1", user_id)
+            await conn.close()
+            return True, "Bravo ! Bonne réponse, tu gagnes 10 points !"
+        else:
+            return False, "Mauvaise réponse, réessaie !"
