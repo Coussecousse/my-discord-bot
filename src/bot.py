@@ -21,7 +21,7 @@ skip_first_loop = False
 # Informations sur la dernière mise à jour
 LAST_UPDATE_DATE = "2025-07-07"
 LAST_UPDATE_SUMMARY = (
-    "- Ajout de la commande /lastupdate et intégration dans /help\n"
+    "- Ajout de la commande /lastupdate\n"
     "- Ajout de la commande /currentpersona pour afficher la personnalité active\n"
     "- Ajout de la commande /scores pour afficher le classement du serveur\n"
     "- Ajout de la commande /vote pour lancer des votes à choix multiples (résultats après 5 min)\n"
@@ -350,12 +350,12 @@ def run_discord_bot():
             rows = await conn.fetch("SELECT username, score FROM Users ORDER BY score DESC, username ASC LIMIT 5;")
             await conn.close()
             if not rows:
-                await interaction.response.send_message("> Aucun score à afficher pour ce serveur.", ephemeral=True)
+                await interaction.followup.send("> Aucun score à afficher pour ce serveur.", ephemeral=True)
                 return
             classement = "\n".join([f"**{i+1}.** {r['username']} : {r['score']} pts" for i, r in enumerate(rows)])
-            await interaction.response.send_message(f"**Classement des scores :**\n{classement}", ephemeral=False)
+            await interaction.followup.send(f"**Classement des scores :**\n{classement}", ephemeral=False)
         except Exception as e:
-            await interaction.response.send_message("> Erreur lors de la récupération des scores.", ephemeral=True)
+            await interaction.followup.send("> Erreur lors de la récupération des scores.", ephemeral=True)
             logger.exception(f"Erreur lors de l'affichage des scores : {e}")
 
     @discordClient.tree.command(name="vote", description="Lance un vote avec jusqu'à 5 choix. Résultats après 5 minutes.")
