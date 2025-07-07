@@ -465,8 +465,6 @@ def run_discord_bot():
             # Ignore les messages de commande slash
             if hasattr(message, 'content') and message.content.startswith('/'):
                 return
-            if getattr(message, 'type', None) == discord.MessageType.application_command:
-                return
             if getattr(message, 'interaction', None) is not None:
                 return
             if discordClient.replying_all_discord_channel_id:
