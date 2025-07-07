@@ -90,9 +90,13 @@ class discordClient(discord.Client):
         await message.response.defer(ephemeral=self.isPrivate) if self.is_replying_all == "False" else None
         await self.message_queue.put((message, user_message))
 
-    async def enqueue_web_search_message(self, message, user_message):
+    async def enqueue_web_search_message(self, message, user_message, already_deferred=False):
         """Enqueue a message for web search processing"""
-        await message.response.defer(ephemeral=self.isPrivate) if self.is_replying_all == "False" else None
+        if not already_deferred and hasattr(message, 'response'):
+            try:
+                await message.response.defer(ephemeral=self.isPrivate)
+            except Exception:
+                pass  # Ignore if already deferred or responded
         await self.web_search_queue.put((message, user_message))
 
     async def send_message(self, message, user_message):

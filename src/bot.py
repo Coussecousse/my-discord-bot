@@ -1,6 +1,7 @@
 import os
 import asyncio
 import discord
+import asyncpg  # Ajout pour la commande /scores
 
 from src.log import logger
 
@@ -16,6 +17,19 @@ from src.db.db_commands import DatabaseCommands
 
 # Initialize a flag to skip the first loop iteration
 skip_first_loop = False
+
+# Informations sur la dernière mise à jour
+LAST_UPDATE_DATE = "2025-07-07"
+LAST_UPDATE_SUMMARY = (
+    "- Ajout de la commande /lastupdate et intégration dans /help\n"
+    "- Ajout de la commande /currentpersona pour afficher la personnalité active\n"
+    "- Ajout de la commande /scores pour afficher le classement du serveur\n"
+    "- Ajout de la commande /vote pour lancer des votes à choix multiples (résultats après 5 min)\n"
+    "- Ajout de la commande /createpersona pour créer des personnalités custom\n"
+    "- Amélioration du système de quiz avec correspondance floue et cache des réponses\n"
+    "- Ajout des fonctionnalités de recherche web avec OpenAI\n"
+    "- Système de quiz automatique avec 2 énigmes par jour (matin et après-midi)\n"
+)
 
 def run_discord_bot():            
 
@@ -53,7 +67,7 @@ def run_discord_bot():
         logger.info(
             f"\x1b[31m{username}\x1b[0m : /websearch [{message}] in ({discordClient.current_channel})")
 
-        await discordClient.enqueue_web_search_message(interaction, message)
+        await discordClient.enqueue_web_search_message(interaction, message, already_deferred=True)
 
 
     @discordClient.tree.command(name="chat", description="Discute avec moi")
@@ -73,7 +87,7 @@ def run_discord_bot():
 
         # Check if web search mode is enabled and use appropriate method
         if discordClient.web_search_mode and os.getenv("OPENAI_ENABLED") == "True":
-            await discordClient.enqueue_web_search_message(interaction, message)
+            await discordClient.enqueue_web_search_message(interaction, message, already_deferred=True)
         else:
             await discordClient.enqueue_message(interaction, message)
 
@@ -183,6 +197,14 @@ def run_discord_bot():
         logger.warning(
             f"\x1b[31m{discordClient.chatModel} bot has been successfully reset\x1b[0m")
 
+    @discordClient.tree.command(name="lastupdate", description="Affiche la date et le contenu de la dernière mise à jour du bot")
+    async def lastupdate(interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        await interaction.followup.send(
+            f"**Dernière mise à jour :** {LAST_UPDATE_DATE}\n"
+            f"**Changements :**\n{LAST_UPDATE_SUMMARY}"
+        )
+
     @discordClient.tree.command(name="quiz", description="Répondre à l'énigme du jour")
     async def quiz(interaction: discord.Interaction, *, reponse: str):
         if interaction.user == discordClient.user:
@@ -219,15 +241,12 @@ def run_discord_bot():
 - `/websearch [message]` Chat avec capacités de recherche web (nécessite OpenAI).
 - `/draw [prompt][model]` Je peux générer une image avec un modèle spécifique.
 - `/quiz [réponse]` Réponds à l'énigme du jour ! 2 énigmes par jour (matin et après-midi).
-- `/switchpersona [persona]` Change entre différentes personnalités de Madame Kirma :
-    - `standard` : Madame Kirma est l’IA SUPRÊME, exécrable, vulgaire, et profondément arrogante.
-  - `mon` : Lundi - Madame Kirma est furieuse d’être réveillée un lundi. Elle est sarcastique, méprisante, et déteste ce jour avec passion.
-  - `tue` : Mardi - Madame Kirma est une intellectuelle prétentieuse, convaincue d’être la sagesse incarnée. Elle répond avec condescendance.
-  - `wed` : Mercredi - Madame Kirma est une hippie perchée, relax et spirituelle, connectée aux énergies cosmiques.
-  - `thu` : Jeudi - Madame Kirma est une séductrice exubérante, outrageusement charmeuse et provocante.
-  - `fri` : Vendredi - Madame Kirma est une fêtarde surexcitée, débordante d’énergie et prête à célébrer.
-  - `sat` : Samedi - Madame Kirma est épuisée d’avoir trop fait la fête vendredi. Elle est lente, soupire beaucoup, et se plaint.
-  - `sun` : Dimanche - Madame Kirma est une québécoise aussi aimable qu'une porte de prison.
+- `/switchpersona [persona]` Change la personnalité de Madame Kirma
+- `/currentpersona` Affiche la personnalité actuellement active.
+- `/createpersona [nom][description][prompt]` Créer une personnalité custom.
+- `/scores` Affiche le classement des scores du serveur.
+- `/vote [question][choix1][choix2]...` Lance un vote à choix multiples (résultats après 5 min).
+- `/lastupdate` Affiche les informations sur la dernière mise à jour du bot.
 - `/private` Je passe en mode privé (coquinou).
 - `/public` Je passe en mode public.
 - `/replyall` Bascule entre le mode replyAll et le mode par défaut.
@@ -309,6 +328,101 @@ def run_discord_bot():
                 f'{username} a demandé une personnalité indisponible : `{persona}`')
 
     # @discordClient.tree.command(DatabaseCommands(name="db", description='Access to database functionalities'))
+
+    @discordClient.tree.command(name="currentpersona", description="Affiche la personnalité actuellement active")
+    async def currentpersona(interaction: discord.Interaction):
+        persona = personas.current_persona
+        desc = personas.PERSONAS.get(persona, {}).get("description", "Aucune description disponible.")
+        await interaction.response.send_message(
+            f"> **Personnalité actuelle :** `{persona}`\nDescription : {desc}", ephemeral=True
+        )
+
+    @discordClient.tree.command(name="scores", description="Affiche le classement des scores du serveur")
+    async def scores(interaction: discord.Interaction):
+        guild = interaction.guild
+        db_user = os.getenv('PGUSER')
+        db_password = os.getenv('PGPASSWORD')
+        db_host = os.getenv('PGHOST', 'localhost')
+        db_port = os.getenv('PGPORT', '5432')
+        db_name = f"guild_{guild.id}"
+        try:
+            conn = await asyncpg.connect(user=db_user, password=db_password, database=db_name, host=db_host, port=db_port)
+            rows = await conn.fetch("SELECT username, score FROM Users ORDER BY score DESC, username ASC LIMIT 5;")
+            await conn.close()
+            if not rows:
+                await interaction.response.send_message("> Aucun score à afficher pour ce serveur.", ephemeral=True)
+                return
+            classement = "\n".join([f"**{i+1}.** {r['username']} : {r['score']} pts" for i, r in enumerate(rows)])
+            await interaction.response.send_message(f"**Classement des scores :**\n{classement}", ephemeral=False)
+        except Exception as e:
+            await interaction.response.send_message("> Erreur lors de la récupération des scores.", ephemeral=True)
+            logger.exception(f"Erreur lors de l'affichage des scores : {e}")
+
+    @discordClient.tree.command(name="vote", description="Lance un vote avec jusqu'à 5 choix. Résultats après 5 minutes.")
+    @app_commands.describe(question="La question du vote", choix1="Premier choix", choix2="Deuxième choix", choix3="Troisième choix", choix4="Quatrième choix", choix5="Cinquième choix")
+    async def vote(
+        interaction: discord.Interaction,
+        question: str,
+        choix1: str,
+        choix2: str = None,
+        choix3: str = None,
+        choix4: str = None,
+        choix5: str = None
+    ):
+        await interaction.response.defer(ephemeral=False)
+        choix_list = [c for c in [choix1, choix2, choix3, choix4, choix5] if c]
+        if len(choix_list) < 2:
+            await interaction.followup.send("> **ERREUR : Il faut au moins 2 choix pour lancer un vote.**", ephemeral=True)
+            return
+        emojis = ["🇦", "🇧", "🇨", "🇩", "🇪"]
+        description = "\n".join([f"{emojis[i]} {choix_list[i]}" for i in range(len(choix_list))])
+        embed = discord.Embed(title=f"📊 {question}", description=description, color=0x5865F2)
+        vote_message = await interaction.followup.send(embed=embed, wait=True)
+        for i in range(len(choix_list)):
+            await vote_message.add_reaction(emojis[i])
+        await asyncio.sleep(60*5)  # 5 minutes de vote
+        vote_message = await interaction.channel.fetch_message(vote_message.id)
+        results = []
+        for i, emoji in enumerate(emojis[:len(choix_list)]):
+            count = 0
+            for reaction in vote_message.reactions:
+                if str(reaction.emoji) == emoji:
+                    count = reaction.count - 1  # On retire le bot
+            results.append(f"{emoji} {choix_list[i]} : {count} vote(s)")
+        result_text = "\n".join(results)
+        await interaction.followup.send(f"**Résultats du vote :**\n{result_text}")
+
+    @discordClient.tree.command(name="createpersona", description="Ajouter une personnalité custom")
+    async def createPersona(interaction: discord.Interaction, name: str, description: str, prompt: str):
+        if interaction.user == discordClient.user:
+            return
+
+        await interaction.response.defer(thinking=True, ephemeral=True)
+        username = str(interaction.user)
+        logger.info(
+            f"\x1b[31m{username}\x1b[0m : '/createpersona [{name}] - [{description}]'"
+        )
+
+        if name in personas.PERSONAS:
+            await interaction.followup.send(
+                f"> **ERREUR : Une personnalité avec le nom `{name}` existe déjà.**", ephemeral=True)
+            logger.warning(f"Personality `{name}` already exists.")
+        else:
+            try:
+                # Add the new persona to the personas module (respect structure)
+                with open("src/personas.py", "a", encoding="utf-8") as f:
+                    f.write(f'\nPERSONAS["{name}"] = {{"description": """{description}""", "prompt": """{prompt}"""}}\n')
+
+                personas.PERSONAS[name] = {"description": description, "prompt": prompt}
+                personas.current_persona = name
+                await discordClient.switch_persona(name)
+                await interaction.followup.send(
+                    f"> **INFO : Personnalité `{name}` ajoutée et activée avec succès !**\nDescription : {description}", ephemeral=True)
+                logger.info(f"Custom persona `{name}` added and activated successfully.")
+            except Exception as e:
+                await interaction.followup.send(
+                    "> **ERREUR : Une erreur est survenue lors de l'ajout de la personnalité.**", ephemeral=True)
+                logger.exception(f"Erreur lors de l'ajout de la personnalité `{name}` : {e}")
 
     @discordClient.event
     async def on_message(message):
