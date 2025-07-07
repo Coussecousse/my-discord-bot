@@ -4,6 +4,7 @@ import asyncio
 import datetime
 import json
 import random  # Add this import
+from datetime import datetime, timedelta
 
 from src import personas
 from src import cultural_theme
@@ -22,6 +23,7 @@ from g4f.Provider import RetryProvider, OpenaiChat, Aichatos, Liaobots  # gpt-4
 from g4f.Provider import Blackbox  # gpt-3.5-turbo
 
 from openai import AsyncOpenAI
+import asyncpg  # Add PostgreSQL support
 
 g4f.debug.logging = True
 
@@ -31,6 +33,7 @@ class discordClient(discord.Client):
     def __init__(self) -> None:
         intents = discord.Intents.default()
         intents.message_content = True
+        intents.members = True  # Add this for guild member access
         super().__init__(intents=intents)
         self.tree = app_commands.CommandTree(self)
         self.chatBot = Client(
@@ -55,6 +58,7 @@ class discordClient(discord.Client):
         self.message_queue = asyncio.Queue()
         self.web_search_queue = asyncio.Queue()
         self.web_search_mode = os.getenv("WEB_SEARCH_ENABLED")
+        self.daily_quiz_state = {}  # {guild_id: {question, answer, deadline, winners}}
 
     async def process_messages(self):
         while True:
@@ -237,5 +241,148 @@ class discordClient(discord.Client):
         persona_prompt = personas.PERSONAS.get(persona)
         await self.handle_response(persona_prompt)
         # await self.send_start_prompt()
+
+    async def create_database_for_guild(self, guild: discord.Guild):
+        """Crée une base PostgreSQL nommée selon l'id du serveur et une table Users, puis ajoute les membres du serveur."""
+        logger.info(f"[DB] Création/connexion à la base pour le serveur {guild.name} ({guild.id})")
+        db_user = os.getenv('PGUSER')
+        db_password = os.getenv('PGPASSWORD')
+        db_host = os.getenv('PGHOST', 'localhost')
+        db_port = os.getenv('PGPORT', '5432')
+        db_admin = os.getenv('PGADMINDB', 'postgres')
+        db_name = f"guild_{guild.id}"
+        
+        # Connexion à la base d'administration
+        conn = await asyncpg.connect(user=db_user, password=db_password, database=db_admin, host=db_host, port=db_port)
+        db_exists = await conn.fetchval("SELECT 1 FROM pg_database WHERE datname = $1", db_name)
+        if not db_exists:
+            await conn.execute(f'CREATE DATABASE "{db_name}"')
+        await conn.close()
+        
+        # Connexion à la base du serveur
+        guild_conn = await asyncpg.connect(user=db_user, password=db_password, database=db_name, host=db_host, port=db_port)
+        await guild_conn.execute('''
+            CREATE TABLE IF NOT EXISTS Users (
+                id SERIAL PRIMARY KEY,
+                discord_id BIGINT UNIQUE,
+                username TEXT,
+                score INTEGER DEFAULT 0
+            );
+        ''')
+        logger.info(f"[DB] Table Users créée/vérifiée pour {guild.name} ({guild.id})")
+        
+        # Ajout des membres du serveur dans la table Users
+        await self.insert_guild_members(guild_conn, guild)
+        await guild_conn.close()
+
+    async def insert_guild_members(self, conn, guild):
+        """Ajoute tous les membres du serveur dans la table Users si non présents."""
+        for member in guild.members:
+            if not member.bot:
+                await conn.execute('''
+                    INSERT INTO Users (discord_id, username, score)
+                    VALUES ($1, $2, 0)
+                    ON CONFLICT (discord_id) DO NOTHING;
+                ''', member.id, str(member))
+        logger.info(f"[DB] Membres ajoutés/présents dans la table Users pour {guild.name} ({guild.id})")
+
+    def start_daily_quiz_task(self, guild):
+        """Démarre la tâche de quiz quotidien pour un serveur."""
+        if not hasattr(self, '_quiz_tasks'):
+            self._quiz_tasks = {}
+        if guild.id not in self._quiz_tasks:
+            @tasks.loop(hours=24)
+            async def daily_quiz():
+                now = datetime.now()
+                hour = random.randint(8, 22)
+                minute = random.randint(0, 59)
+                next_quiz_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+                logger.info(f"[QUIZ] Prochain quiz pour {guild.name} ({guild.id}) prévu à {next_quiz_time.strftime('%Y-%m-%d %H:%M:%S')}")
+                
+                if next_quiz_time < now:
+                    next_quiz_time += timedelta(days=1)
+                
+                wait_seconds = (next_quiz_time - now).total_seconds()
+                await asyncio.sleep(wait_seconds)
+                
+                # Générer une énigme et sa réponse via l'IA
+                prompt = "Génère une énigme originale (pas une devinette connue) et donne la réponse. Format : Question: ... Réponse: ..."
+                ia_response = await self.handle_response(prompt)
+                
+                # Extraction question/réponse
+                question, answer = None, None
+                for line in ia_response.splitlines():
+                    if line.lower().startswith("question:"):
+                        question = line.split(":", 1)[1].strip()
+                    if line.lower().startswith("réponse:") or line.lower().startswith("reponse:"):
+                        answer = line.split(":", 1)[1].strip()
+                
+                if not question or not answer:
+                    logger.error(f"[QUIZ] Échec extraction énigme IA : {ia_response}")
+                    return  # Ne lance pas le quiz si extraction échouée
+                
+                deadline = datetime.now() + timedelta(hours=1)
+                self.daily_quiz_state[guild.id] = {
+                    "question": question,
+                    "answer": answer.lower(),
+                    "deadline": deadline,
+                    "winners": set()
+                }
+                
+                logger.info(f"[QUIZ] Énigme générée pour {guild.name} ({guild.id}) : {question}")
+                logger.info(f"[QUIZ] Réponse attendue : {answer}")
+                
+                channel = self.get_channel(int(self.discord_channel_id))
+                if channel:
+                    await channel.send(f"🧩 **Énigme du jour !** 🧩\n{question}\nVous avez 1h pour répondre avec /quiz [réponse] !")
+                else:
+                    logger.error(f"[QUIZ] Canal non trouvé : {self.discord_channel_id}")
+            
+            self._quiz_tasks[guild.id] = daily_quiz
+            daily_quiz.start()
+
+    async def check_quiz_answer(self, guild, user_id, username, answer):
+        """Vérifie la réponse à l'énigme du jour."""
+        state = self.daily_quiz_state.get(guild.id)
+        logger.info(f"[QUIZ] {username} ({user_id}) tente la réponse '{answer}' pour {guild.name} ({guild.id})")
+        
+        if not state:
+            logger.info(f"[QUIZ] Aucune énigme en cours pour {guild.name} ({guild.id})")
+            return False, "Aucune énigme en cours."
+        
+        if datetime.now() > state["deadline"]:
+            logger.info(f"[QUIZ] Temps écoulé pour l'énigme du jour ({guild.name} - {guild.id})")
+            return False, "Le temps est écoulé pour cette énigme."
+        
+        if user_id in state["winners"]:
+            logger.info(f"[QUIZ] {username} ({user_id}) a déjà répondu correctement aujourd'hui ({guild.name} - {guild.id})")
+            return False, "Tu as déjà répondu correctement à l'énigme du jour !"
+
+        # Nettoie la réponse attendue et la réponse donnée pour la comparaison
+        expected_answer = state["answer"].strip().lower().rstrip(".")
+        user_answer = answer.strip().lower().rstrip(".")
+        
+        logger.info(f"[QUIZ] Réponse attendue : '{expected_answer}' pour {guild.name} ({guild.id})")
+        logger.info(f"[QUIZ] Réponse donnée (nettoyée) : '{user_answer}'")
+        
+        if user_answer == expected_answer:
+            state["winners"].add(user_id)
+            # Ajoute 10 points dans la BDD
+            db_user = os.getenv('PGUSER')
+            db_password = os.getenv('PGPASSWORD')
+            db_host = os.getenv('PGHOST', 'localhost')
+            db_port = os.getenv('PGPORT', '5432')
+            db_name = f"guild_{guild.id}"
+            
+            try:
+                conn = await asyncpg.connect(user=db_user, password=db_password, database=db_name, host=db_host, port=db_port)
+                await conn.execute("UPDATE Users SET score = score + 10 WHERE discord_id = $1", user_id)
+                await conn.close()
+                return True, "Bravo ! Bonne réponse, tu gagnes 10 points !"
+            except Exception as e:
+                logger.error(f"[QUIZ] Erreur base de données : {e}")
+                return True, "Bravo ! Bonne réponse !"
+        else:
+            return False, "Mauvaise réponse, réessaie !"
 
 discordClient = discordClient()
