@@ -2,6 +2,7 @@ import os
 import asyncio
 import discord
 import asyncpg  # Ajout pour la commande /scores
+import sys
 
 from src.log import logger
 
@@ -485,3 +486,13 @@ def run_discord_bot():
     TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 
     discordClient.run(TOKEN)
+
+    @discordClient.tree.command(name="restart", description="Redémarre le bot (admin seulement)")
+    async def restart(interaction: discord.Interaction):
+        admin_id = os.getenv("ADMIN_USER_ID")
+        if not admin_id or str(interaction.user.id) != str(admin_id):
+            await interaction.response.send_message("> **ERREUR : Seul l'administrateur peut redémarrer le bot.**", ephemeral=True)
+            return
+        await interaction.response.send_message("> **Redémarrage du bot...**", ephemeral=True)
+        await discordClient.close()
+        os.execv(sys.executable, [sys.executable, "main.py"])
