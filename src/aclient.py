@@ -141,7 +141,7 @@ class discordClient(discord.Client):
                 try:
                     theme = random.choice(cultural_theme.THEMES)  # Use random.choice to select a theme
                     # Prompt pour l'IA
-                    prompt = f"Génère un message du jour sans faire référence à ce prompt et améliore notre culture générale en nous apprenant quelque chose de nouveau, de concret, réel et intéressant sur ce thème : {theme}. Rentres dans les détails pour nous en apprendre un maximum comme si nous étions tes élèves mais sans faire référence au fait que nous sommes tes élèves."
+                    prompt = f"Génère un message du jour en utilisant ta personnalité actuelle donnant les actualités dans un maximum de 1500 caractères (ce point est très important) et ne donne pas d'url."
 
                     generated_message = await self.handle_response(prompt)
                     
