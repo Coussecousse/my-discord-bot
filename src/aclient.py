@@ -149,7 +149,7 @@ class discordClient(discord.Client):
                     # Prompt pour l'IA
                     prompt = f"Génère un message du jour en utilisant ta personnalité actuelle donnant les actualités dans un maximum de 1500 caractères (ce point est très important) et ne donne pas d'url."
 
-                    generated_message = await self.handle_response(prompt)
+                    generated_message = await self.handle_web_search_response(prompt)
                     
                     # Envoie le message généré dans le canal
                     await channel.send(generated_message)
