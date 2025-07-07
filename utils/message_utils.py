@@ -1,8 +1,22 @@
 import re
 from discord import Message
+import discord
 
 async def send_split_message(self, response: str, message: Message, has_followed_up=False):
     char_limit = 1900
+    # Helper to check if message is an interaction (has followup)
+    is_interaction = hasattr(message, 'followup')
+    async def safe_send(content):
+        nonlocal has_followed_up
+        if self.is_replying_all == "True" or has_followed_up or not is_interaction:
+            await message.channel.send(content)
+        else:
+            try:
+                await message.followup.send(content)
+            except discord.errors.NotFound:
+                await message.channel.send(content)
+            has_followed_up = True
+
     if len(response) > char_limit:
         is_code_block = False
         parts = response.split("```")
@@ -11,27 +25,15 @@ async def send_split_message(self, response: str, message: Message, has_followed
             if is_code_block:
                 code_block_chunks = [parts[i][j:j+char_limit] for j in range(0, len(parts[i]), char_limit)]
                 for chunk in code_block_chunks:
-                    if self.is_replying_all == "True" or has_followed_up:
-                        await message.channel.send(f"```{chunk}```")
-                    else:
-                        await message.followup.send(f"```{chunk}```")
-                        has_followed_up = True
+                    await safe_send(f"```{chunk}```")
                 is_code_block = False
             else:
                 non_code_chunks = [parts[i][j:j+char_limit] for j in range(0, len(parts[i]), char_limit)]
                 for chunk in non_code_chunks:
-                    if self.is_replying_all == "True" or has_followed_up:
-                        await message.channel.send(chunk)
-                    else:
-                        await message.followup.send(chunk)
-                        has_followed_up = True
+                    await safe_send(chunk)
                 is_code_block = True
     else:
-        if self.is_replying_all == "True" or has_followed_up:
-            await message.channel.send(response)
-        else:
-            await message.followup.send(response)
-            has_followed_up = True
+        await safe_send(response)
 
     return has_followed_up
 
