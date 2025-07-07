@@ -483,16 +483,42 @@ def run_discord_bot():
             else:
                 logger.exception("replying_all_discord_channel_id not found, please use the command `/replyall` again.")
 
-    TOKEN = os.getenv("DISCORD_BOT_TOKEN")
-
-    discordClient.run(TOKEN)
-
     @discordClient.tree.command(name="restart", description="Redémarre le bot (admin seulement)")
     async def restart(interaction: discord.Interaction):
         admin_id = os.getenv("ADMIN_USER_ID")
+        logger.info(f"Commande /restart appelée par {interaction.user} (ID: {interaction.user.id})")
         if not admin_id or str(interaction.user.id) != str(admin_id):
+            logger.warning("Tentative de redémarrage non autorisée.")
             await interaction.response.send_message("> **ERREUR : Seul l'administrateur peut redémarrer le bot.**", ephemeral=True)
             return
         await interaction.response.send_message("> **Redémarrage du bot...**", ephemeral=True)
-        await discordClient.close()
+        logger.info("Redémarrage du bot demandé par l'administrateur.")
         os.execv(sys.executable, [sys.executable, "main.py"])
+
+    @discordClient.tree.command(name="sendlog", description="Envoie le fichier log au DM de l'admin")
+    async def sendlog(interaction: discord.Interaction):
+        admin_id = os.getenv("ADMIN_USER_ID")
+        logger.info(f"Commande /sendlog appelée par {interaction.user} (ID: {interaction.user.id})")
+        if not admin_id or str(interaction.user.id) != str(admin_id):
+            logger.warning("Tentative d'accès au log non autorisée.")
+            await interaction.response.send_message("> **ERREUR : Seul l'administrateur peut recevoir le log.**", ephemeral=True)
+            return
+        log_path = os.path.join("log", "bot_discord.log")
+        if not os.path.exists(log_path):
+            logger.error(f"Fichier log introuvable à {log_path}")
+            await interaction.response.send_message("> **ERREUR : Le fichier log n'existe pas.**", ephemeral=True)
+            return
+        await interaction.response.send_message("> **Envoi du fichier log en DM...**", ephemeral=True)
+        try:
+            with open(log_path, "rb") as f:
+                dm = await interaction.user.create_dm()
+                await dm.send(file=discord.File(f, filename="bot_discord.log"))
+            logger.info("Fichier log envoyé en DM à l'administrateur.")
+        except Exception as e:
+            logger.exception(f"Erreur lors de l'envoi du log en DM : {e}")
+            await interaction.followup.send(f"> **ERREUR : Impossible d'envoyer le log en DM.**\n{e}", ephemeral=True)
+
+    TOKEN = os.getenv("DISCORD_BOT_TOKEN")
+    logger.info("Démarrage du bot Discord...")
+    discordClient.run(TOKEN)
+
