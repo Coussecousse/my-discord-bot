@@ -1,7 +1,6 @@
 import os
 import discord
 import asyncio
-import datetime
 import json
 import random  # Add this import
 from datetime import datetime, timedelta
@@ -119,7 +118,7 @@ class discordClient(discord.Client):
     async def update_persona_and_daily_message(self):
         # Met à jour la personnalité
         DAY_PERSONAS = json.loads(os.getenv('DAY_PERSONAS', '{}'))
-        today = datetime.datetime.now().weekday()  # 0 = Monday, 6 = Sunday
+        today = datetime.now().weekday()  # 0 = Monday, 6 = Sunday
         new_persona = DAY_PERSONAS.get(str(today), "standard")  # Default: standard
 
         # Vérifie et met à jour la personnalité
@@ -134,7 +133,7 @@ class discordClient(discord.Client):
             print(f"[INFO] Pas de changement nécessaire. Personnalité actuelle : {personas.current_persona}")
 
         # Vérifie si l'heure est entre 9h et 10h pour envoyer le message du jour
-        now = datetime.datetime.now()
+        now = datetime.now()
         if now.hour == 7:
             print(f"[DEBUG] Préparation pour envoyer le message du jour à : {now}")
             channel = self.get_channel(int(self.discord_channel_id))
@@ -238,8 +237,12 @@ class discordClient(discord.Client):
 
     async def switch_persona(self, persona) -> None:
         self.reset_conversation_history()
-        persona_prompt = personas.PERSONAS.get(persona)
-        await self.handle_response(persona_prompt)
+        persona_data = personas.PERSONAS.get(persona)
+        if persona_data and "prompt" in persona_data:
+            persona_prompt = persona_data["prompt"]
+            await self.handle_response(persona_prompt)
+        else:
+            logger.warning(f"Persona '{persona}' not found or has no prompt")
         # await self.send_start_prompt()
 
     async def create_database_for_guild(self, guild: discord.Guild):
