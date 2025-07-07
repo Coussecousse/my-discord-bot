@@ -3,6 +3,7 @@ import discord
 import asyncio
 import json
 import random  # Add this import
+import difflib  # Add this import for fuzzy string matching
 from datetime import datetime, timedelta
 
 from src import personas
@@ -272,7 +273,19 @@ class discordClient(discord.Client):
                 score INTEGER DEFAULT 0
             );
         ''')
-        logger.info(f"[DB] Table Users créée/vérifiée pour {guild.name} ({guild.id})")
+        
+        # Créer aussi la table pour les quiz
+        await guild_conn.execute('''
+            CREATE TABLE IF NOT EXISTS Quizzes (
+                id SERIAL PRIMARY KEY,
+                question TEXT NOT NULL,
+                answer TEXT NOT NULL,
+                quiz_type TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT NOW(),
+                deadline TIMESTAMP NOT NULL,
+                is_active BOOLEAN DEFAULT TRUE
+            );
+        ''')
         
         # Ajout des membres du serveur dans la table Users
         await self.insert_guild_members(guild_conn, guild)
@@ -294,22 +307,49 @@ class discordClient(discord.Client):
         if not hasattr(self, '_quiz_tasks'):
             self._quiz_tasks = {}
         if guild.id not in self._quiz_tasks:
-            @tasks.loop(hours=24)
+            @tasks.loop(hours=12)  # Toutes les 12h pour avoir 2 quiz par jour
             async def daily_quiz():
                 now = datetime.now()
-                hour = random.randint(8, 22)
+                
+                # Détermine si c'est le quiz du matin (8h-14h) ou de l'après-midi (15h-22h)
+                if now.hour < 14:
+                    # Quiz du matin : entre 8h et 14h
+                    hour = random.randint(8, 14)
+                    quiz_type = "matin"
+                else:
+                    # Quiz de l'après-midi : entre 15h et 22h
+                    hour = random.randint(15, 22)
+                    quiz_type = "après-midi"
+                
                 minute = random.randint(0, 59)
                 next_quiz_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-                logger.info(f"[QUIZ] Prochain quiz pour {guild.name} ({guild.id}) prévu à {next_quiz_time.strftime('%Y-%m-%d %H:%M:%S')}")
+                logger.info(f"[QUIZ] Prochain quiz ({quiz_type}) pour {guild.name} ({guild.id}) prévu à {next_quiz_time.strftime('%Y-%m-%d %H:%M:%S')}")
                 
                 if next_quiz_time < now:
-                    next_quiz_time += timedelta(days=1)
+                    next_quiz_time += timedelta(hours=12)
                 
                 wait_seconds = (next_quiz_time - now).total_seconds()
                 await asyncio.sleep(wait_seconds)
                 
                 # Générer une énigme et sa réponse via l'IA
-                prompt = "Génère une énigme originale (pas une devinette connue) et donne la réponse. Format : Question: ... Réponse: ..."
+                prompt = """Génère une énigme originale (pas une devinette connue) avec une réponse courte et précise.
+
+RÈGLES IMPORTANTES :
+- La réponse doit être UN SEUL MOT ou UNE EXPRESSION COURTE (maximum 3 mots)
+- Pas de phrase complète comme réponse
+- Pas d'explication ou d'artifice dans la réponse
+- Seulement le mot/expression exact
+
+Format obligatoire :
+Question: [énigme ici]
+Réponse: [mot ou expression courte seulement]
+
+Exemples :
+Question: Je suis rond, je roule, mais je ne suis pas une roue. On me mange et je peux être sucré ou salé.
+Réponse: biscuit
+
+Question: Plus je suis percé, plus je tiens fermement.
+Réponse: ceinture"""
                 ia_response = await self.handle_response(prompt)
                 
                 # Extraction question/réponse
@@ -325,67 +365,144 @@ class discordClient(discord.Client):
                     return  # Ne lance pas le quiz si extraction échouée
                 
                 deadline = datetime.now() + timedelta(hours=1)
-                self.daily_quiz_state[guild.id] = {
-                    "question": question,
-                    "answer": answer.lower(),
-                    "deadline": deadline,
-                    "winners": set()
-                }
                 
-                logger.info(f"[QUIZ] Énigme générée pour {guild.name} ({guild.id}) : {question}")
-                logger.info(f"[QUIZ] Réponse attendue : {answer}")
+                # Insérer le quiz dans la base de données du serveur
+                db_user = os.getenv('PGUSER')
+                db_password = os.getenv('PGPASSWORD')
+                db_host = os.getenv('PGHOST', 'localhost')
+                db_port = os.getenv('PGPORT', '5432')
+                db_name = f"guild_{guild.id}"
                 
-                channel = self.get_channel(int(self.discord_channel_id))
-                if channel:
-                    await channel.send(f"🧩 **Énigme du jour !** 🧩\n{question}\nVous avez 1h pour répondre avec /quiz [réponse] !")
-                else:
-                    logger.error(f"[QUIZ] Canal non trouvé : {self.discord_channel_id}")
+                try:
+                    conn = await asyncpg.connect(user=db_user, password=db_password, database=db_name, host=db_host, port=db_port)
+                    
+                    # Désactiver les anciens quiz actifs
+                    await conn.execute("UPDATE Quizzes SET is_active = FALSE WHERE is_active = TRUE")
+                    
+                    # Insérer le nouveau quiz
+                    quiz_id = await conn.fetchval('''
+                        INSERT INTO Quizzes (question, answer, quiz_type, deadline)
+                        VALUES ($1, $2, $3, $4)
+                        RETURNING id
+                    ''', question, answer.lower(), quiz_type, deadline)
+                    
+                    await conn.close()
+                    
+                    logger.info(f"[QUIZ] Énigme ({quiz_type}) générée et enregistrée (ID: {quiz_id}) pour {guild.name} ({guild.id}) : {question}")
+                    logger.info(f"[QUIZ] Réponse attendue : {answer}")
+                    
+                    channel = self.get_channel(int(self.discord_channel_id))
+                    if channel:
+                        emoji = "🌅" if quiz_type == "matin" else "🌆"
+                        await channel.send(f"{emoji} **Énigme du {quiz_type} !** {emoji}\n{question}\nVous avez 1h pour répondre avec /quiz [réponse] !")
+                    else:
+                        logger.error(f"[QUIZ] Canal non trouvé : {self.discord_channel_id}")
+                        
+                except Exception as e:
+                    logger.error(f"[QUIZ] Erreur base de données lors de la création du quiz : {e}")
             
             self._quiz_tasks[guild.id] = daily_quiz
             daily_quiz.start()
 
     async def check_quiz_answer(self, guild, user_id, username, answer):
         """Vérifie la réponse à l'énigme du jour."""
-        state = self.daily_quiz_state.get(guild.id)
         logger.info(f"[QUIZ] {username} ({user_id}) tente la réponse '{answer}' pour {guild.name} ({guild.id})")
         
-        if not state:
-            logger.info(f"[QUIZ] Aucune énigme en cours pour {guild.name} ({guild.id})")
-            return False, "Aucune énigme en cours."
+        # Connexion à la base de données du serveur
+        db_user = os.getenv('PGUSER')
+        db_password = os.getenv('PGPASSWORD')
+        db_host = os.getenv('PGHOST', 'localhost')
+        db_port = os.getenv('PGPORT', '5432')
+        db_name = f"guild_{guild.id}"
         
-        if datetime.now() > state["deadline"]:
-            logger.info(f"[QUIZ] Temps écoulé pour l'énigme du jour ({guild.name} - {guild.id})")
-            return False, "Le temps est écoulé pour cette énigme."
-        
-        if user_id in state["winners"]:
-            logger.info(f"[QUIZ] {username} ({user_id}) a déjà répondu correctement aujourd'hui ({guild.name} - {guild.id})")
-            return False, "Tu as déjà répondu correctement à l'énigme du jour !"
-
-        # Nettoie la réponse attendue et la réponse donnée pour la comparaison
-        expected_answer = state["answer"].strip().lower().rstrip(".")
-        user_answer = answer.strip().lower().rstrip(".")
-        
-        logger.info(f"[QUIZ] Réponse attendue : '{expected_answer}' pour {guild.name} ({guild.id})")
-        logger.info(f"[QUIZ] Réponse donnée (nettoyée) : '{user_answer}'")
-        
-        if user_answer == expected_answer:
-            state["winners"].add(user_id)
-            # Ajoute 10 points dans la BDD
-            db_user = os.getenv('PGUSER')
-            db_password = os.getenv('PGPASSWORD')
-            db_host = os.getenv('PGHOST', 'localhost')
-            db_port = os.getenv('PGPORT', '5432')
-            db_name = f"guild_{guild.id}"
+        try:
+            conn = await asyncpg.connect(user=db_user, password=db_password, database=db_name, host=db_host, port=db_port)
             
-            try:
-                conn = await asyncpg.connect(user=db_user, password=db_password, database=db_name, host=db_host, port=db_port)
-                await conn.execute("UPDATE Users SET score = score + 10 WHERE discord_id = $1", user_id)
+            # Chercher le quiz actif pour ce serveur
+            active_quiz = await conn.fetchrow('''
+                SELECT id, question, answer, quiz_type, deadline 
+                FROM Quizzes 
+                WHERE is_active = TRUE AND deadline > NOW()
+                ORDER BY created_at DESC 
+                LIMIT 1
+            ''')
+            
+            if not active_quiz:
                 await conn.close()
-                return True, "Bravo ! Bonne réponse, tu gagnes 10 points !"
-            except Exception as e:
-                logger.error(f"[QUIZ] Erreur base de données : {e}")
-                return True, "Bravo ! Bonne réponse !"
-        else:
-            return False, "Mauvaise réponse, réessaie !"
+                logger.info(f"[QUIZ] Aucune énigme en cours pour {guild.name} ({guild.id})")
+                return False, "Aucune énigme en cours."
+            
+            # Vérifier si l'utilisateur a déjà répondu correctement à ce quiz
+            has_answered = await conn.fetchval('''
+                SELECT EXISTS(
+                    SELECT 1 FROM quiz_winners 
+                    WHERE quiz_id = $1 AND user_id = $2
+                )
+            ''', active_quiz['id'], user_id)
+            
+            if has_answered:
+                await conn.close()
+                quiz_type = active_quiz['quiz_type']
+                logger.info(f"[QUIZ] {username} ({user_id}) a déjà répondu correctement à l'énigme du {quiz_type} ({guild.name} - {guild.id})")
+                return False, f"Tu as déjà répondu correctement à l'énigme du {quiz_type} !"
+
+            # Nettoie et normalise la réponse attendue et la réponse donnée
+            expected_answer = self._normalize_answer(active_quiz['answer'])
+            user_answer = self._normalize_answer(answer)
+            
+            logger.info(f"[QUIZ] Réponse attendue (normalisée) : '{expected_answer}' pour {guild.name} ({guild.id})")
+            logger.info(f"[QUIZ] Réponse donnée (normalisée) : '{user_answer}'")
+            
+            # Calcul de la similarité avec difflib
+            similarity = difflib.SequenceMatcher(None, expected_answer, user_answer).ratio()
+            similarity_threshold = 0.80  # Seuil de similarité (80%)
+            
+            logger.info(f"[QUIZ] Similarité calculée : {similarity:.2f} (seuil: {similarity_threshold})")
+            
+            # Accepter la réponse si elle est identique ou suffisamment similaire
+            if user_answer == expected_answer or similarity >= similarity_threshold:
+                # Enregistrer la bonne réponse
+                await conn.execute('''
+                    INSERT INTO quiz_winners (quiz_id, user_id, username, answered_at)
+                    VALUES ($1, $2, $3, NOW())
+                    ON CONFLICT (quiz_id, user_id) DO NOTHING
+                ''', active_quiz['id'], user_id, username)
+                
+                # Ajouter 10 points à l'utilisateur
+                await conn.execute("UPDATE Users SET score = score + 10 WHERE discord_id = $1", user_id)
+                
+                await conn.close()
+                quiz_type = active_quiz['quiz_type']
+                
+                # Message différent selon si c'est une correspondance exacte ou similaire
+                if user_answer == expected_answer:
+                    return True, f"Bravo ! Bonne réponse pour l'énigme du {quiz_type}, tu gagnes 10 points !"
+                else:
+                    return True, f"Bravo ! Ta réponse est suffisamment proche de la réponse attendue '{active_quiz['answer']}'. Tu gagnes 10 points !"
+            else:
+                await conn.close()
+                return False, "Mauvaise réponse, réessaie !"
+                
+        except Exception as e:
+            logger.error(f"[QUIZ] Erreur base de données : {e}")
+            return False, "Erreur technique, veuillez réessayer plus tard."
+
+    def _normalize_answer(self, answer):
+        """
+        Normalise une réponse en enlevant les articles et mots courants
+        pour améliorer la correspondance floue.
+        """
+        # Convertir en minuscules et enlever la ponctuation
+        normalized = answer.strip().lower().rstrip(".,!?;:")
+        
+        # Articles et mots courants à enlever du début
+        common_words = ['le ', 'la ', 'les ', 'un ', 'une ', 'des ', 'du ', 'de la ', 'de l\'', 'de ', 'd\'', 'l\'']
+        
+        for word in common_words:
+            if normalized.startswith(word):
+                normalized = normalized[len(word):].strip()
+                break  # Ne supprimer qu'un seul article au début
+        
+        return normalized
 
 discordClient = discordClient()
