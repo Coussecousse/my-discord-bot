@@ -40,33 +40,25 @@ def setup_logger(module_name:str) -> logging.Logger:
     # create logger
     library, _, _ = module_name.partition('.py')
     logger = logging.getLogger(library)
-    logger.setLevel(logging.INFO)
-
-    log_level = "INFO"
-    level = logging.getLevelName(log_level.upper())
+    logger.setLevel(logging.DEBUG)
+    logger.propagate = False
 
     # create console handler
     console_handler = logging.StreamHandler()
-    console_handler.setLevel(level)
+    console_handler.setLevel(logging.INFO)
     console_handler.setFormatter(CustomFormatter())
-    # Add console handler to logger
-    logger.addHandler(console_handler)
+    if not any(isinstance(h, logging.StreamHandler) for h in logger.handlers):
+        logger.addHandler(console_handler)
 
-    if os.getenv("LOGGING") == "True":  # Check if logging is enabled
-        # specify that the log file path is the same as `main.py` file path
-        grandparent_dir = os.path.abspath(f"{__file__}/../../")
-        log_name = 'chatgpt_discord_bot.log'
-        log_path = os.path.join(grandparent_dir, log_name)
-        # create local log handler
-        log_handler = logging.handlers.RotatingFileHandler(
-            filename=log_path,
-            encoding='utf-8',
-            maxBytes=32 * 1024 * 1024,  # 32 MiB
-            backupCount=2,  # Rotate through 5 files
-        )
-        log_handler.setFormatter(CustomFormatter())
-        log_handler.setLevel(level)
-        logger.addHandler(log_handler)
+    # always log to /log/bot_discord.log
+    log_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../log'))
+    os.makedirs(log_dir, exist_ok=True)
+    log_path = os.path.join(log_dir, 'bot_discord.log')
+    file_handler = logging.FileHandler(log_path, encoding='utf-8')
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+    if not any(isinstance(h, logging.FileHandler) for h in logger.handlers):
+        logger.addHandler(file_handler)
 
     return logger
 
