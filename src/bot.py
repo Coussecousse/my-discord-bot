@@ -29,6 +29,33 @@ def run_discord_bot():
         logger.info(f'{discordClient.user} est connecté!')
 
 
+    @discordClient.tree.command(name="websearch", description="Chat with web search capabilities")
+    async def websearch(interaction: discord.Interaction, *, message: str):
+        if discordClient.is_replying_all == "True":
+            await interaction.response.defer(ephemeral=False)
+            await interaction.followup.send(
+                "> **WARN: You already on replyAll mode. If you want to use the Slash Command, switch to normal mode by using `/replyall` again**")
+            logger.warning("\x1b[31mYou already on replyAll mode, can't use slash command!\x1b[0m")
+            return
+        if interaction.user == discordClient.user:
+            return
+
+        # Check if OpenAI is enabled for web search
+        if os.getenv("OPENAI_ENABLED") == "False":
+            await interaction.response.defer(ephemeral=False)
+            await interaction.followup.send(
+                "> **ERROR: Web search requires OpenAI to be enabled. Please set OPENAI_ENABLED=True in your environment variables.**")
+            logger.error("Web search attempted but OpenAI is disabled")
+            return
+
+        username = str(interaction.user)
+        discordClient.current_channel = interaction.channel
+        logger.info(
+            f"\x1b[31m{username}\x1b[0m : /websearch [{message}] in ({discordClient.current_channel})")
+
+        await discordClient.enqueue_web_search_message(interaction, message)
+
+
     @discordClient.tree.command(name="chat", description="Discute avec moi")
     async def chat(interaction: discord.Interaction, *, message: str):
         if discordClient.is_replying_all == "True":
@@ -44,7 +71,11 @@ def run_discord_bot():
         logger.info(
             f"\x1b[31m{username}\x1b[0m : /chat [{message}] in ({discordClient.current_channel})")
 
-        await discordClient.enqueue_message(interaction, message)
+        # Check if web search mode is enabled and use appropriate method
+        if discordClient.web_search_mode and os.getenv("OPENAI_ENABLED") == "True":
+            await discordClient.enqueue_web_search_message(interaction, message)
+        else:
+            await discordClient.enqueue_message(interaction, message)
 
 
     @discordClient.tree.command(name="private", description="Toggle private access")
@@ -73,6 +104,29 @@ def run_discord_bot():
             await interaction.followup.send(
                 "> **WARN: You already on public mode. If you want to switch to private mode, use `/private`**")
             logger.info("You already on public mode!")
+
+
+    @discordClient.tree.command(name="togglewebsearch", description="Toggle web search mode for all chat commands")
+    async def togglewebsearch(interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=False)
+
+        # Check if OpenAI is enabled
+        if os.getenv("OPENAI_ENABLED") == "False":
+            await interaction.followup.send(
+                "> **ERROR: Web search requires OpenAI to be enabled. Please set OPENAI_ENABLED=True in your environment variables.**")
+            logger.error("Web search toggle attempted but OpenAI is disabled")
+            return
+
+        discordClient.web_search_mode = not discordClient.web_search_mode
+
+        if discordClient.web_search_mode:
+            await interaction.followup.send(
+                "> **INFO: Web search mode enabled. All chat commands (/chat and replyall) will now use web search capabilities.**")
+            logger.info("Web search mode enabled for all chat commands")
+        else:
+            await interaction.followup.send(
+                "> **INFO: Web search mode disabled. Chat commands will use standard chat without web search.**")
+            logger.info("Web search mode disabled for all chat commands")
 
 
     @discordClient.tree.command(name="replyall", description="Toggle replyAll access")
@@ -133,7 +187,8 @@ def run_discord_bot():
     async def help(interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=False)
         await interaction.followup.send(""":crystal_ball: **COMMANDES BASIQUES** :crystal_ball:
-- `/chat [message]` Dis moi ce que tu veux savoir.
+- `/chat [message]` Dis moi ce que tu veux savoir - respecte le toggle de recherche web.
+- `/websearch [message]` Chat avec capacités de recherche web (nécessite OpenAI).
 - `/draw [prompt][model]` Je peux générer une image avec un modèle spécifique.
 - `/switchpersona [persona]` Change entre différentes personnalités de Madame Kirma :
     - `standard` : Madame Kirma est l’IA SUPRÊME, exécrable, vulgaire, et profondément arrogante.
@@ -147,6 +202,7 @@ def run_discord_bot():
 - `/private` Je passe en mode privé (coquinou).
 - `/public` Je passe en mode public.
 - `/replyall` Bascule entre le mode replyAll et le mode par défaut.
+- `/togglewebsearch` Active/désactive le mode recherche web pour toutes les commandes chat (nécessite OpenAI).
 - `/reset` Réinitialise l'historique de la conversation.                        
 """)
 
@@ -237,7 +293,11 @@ def run_discord_bot():
                     discordClient.current_channel = message.channel
                     logger.info(f"\x1b[31m{username}\x1b[0m : '{user_message}' ({discordClient.current_channel})")
 
-                    await discordClient.enqueue_message(message, user_message)
+                    # Use web search if enabled and OpenAI is available
+                    if discordClient.web_search_mode and os.getenv("OPENAI_ENABLED") == "True":
+                        await discordClient.enqueue_web_search_message(message, user_message)
+                    else:
+                        await discordClient.enqueue_message(message, user_message)
             else:
                 logger.exception("replying_all_discord_channel_id not found, please use the command `/replyall` again.")
 

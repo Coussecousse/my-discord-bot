@@ -53,6 +53,8 @@ class discordClient(discord.Client):
             self.starting_prompt = f.read()
 
         self.message_queue = asyncio.Queue()
+        self.web_search_queue = asyncio.Queue()
+        self.web_search_mode = os.getenv("WEB_SEARCH_ENABLED")
 
     async def process_messages(self):
         while True:
@@ -66,13 +68,30 @@ class discordClient(discord.Client):
                             logger.exception(f"Error while processing message: {e}")
                         finally:
                             self.message_queue.task_done()
+                
+                # Process web search messages
+                while not self.web_search_queue.empty():
+                    async with self.current_channel.typing():
+                        message, user_message = await self.web_search_queue.get()
+                        try:
+                            await self.send_web_search_message(message, user_message)
+                        except Exception as e:
+                            logger.exception(f"Error while processing web search message: {e}")
+                        finally:
+                            self.web_search_queue.task_done()
             await asyncio.sleep(1)
 
     async def enqueue_message(self, message, user_message):
         await message.response.defer(ephemeral=self.isPrivate) if self.is_replying_all == "False" else None
         await self.message_queue.put((message, user_message))
 
+    async def enqueue_web_search_message(self, message, user_message):
+        """Enqueue a message for web search processing"""
+        await message.response.defer(ephemeral=self.isPrivate) if self.is_replying_all == "False" else None
+        await self.web_search_queue.put((message, user_message))
+
     async def send_message(self, message, user_message):
+        logger.info(f"Starting to process regular message: {user_message}")
         author = message.user.id if self.is_replying_all == "False" else message.author.id
         user_message_rule = user_message + "Ne fais pas référence à ce message dans ta réponse et suis cette règle : N'oublie pas de répondre avec ta personnalité actuelle et exagère là pour qu'on puisse la reconnaître dans ta réponse."
         try:
@@ -81,6 +100,16 @@ class discordClient(discord.Client):
             await send_split_message(self, response_content, message)
         except Exception as e:
             logger.exception(f"Error while sending: {e}")
+
+    async def send_web_search_message(self, message, user_message):
+        """Send message with web search capability"""
+        author = message.user.id if self.is_replying_all == "False" else message.author.id
+        try:
+            response = await self.handle_web_search_response(user_message)
+            response_content = f'> **{user_message}** - <@{str(author)}> \n\n{response}'
+            await send_split_message(self, response_content, message)
+        except Exception as e:
+            logger.exception(f"Error while sending web search message: {e}")
 
     @tasks.loop(minutes=60)
     async def update_persona_and_daily_message(self):
@@ -143,6 +172,62 @@ class discordClient(discord.Client):
         except Exception as e:
             logger.exception(f"Error while sending system prompt: {e}")
 
+    async def handle_response(self, user_message, use_web_search=False) -> str:
+        if os.getenv("OPENAI_ENABLED") == "False" or self.openai_client is None:
+            self.conversation_history.append({'role': 'user', 'content': user_message})
+            if len(self.conversation_history) > 26:
+                del self.conversation_history[4:6]
+            async_create = sync_to_async(self.chatBot.chat.completions.create, thread_sensitive=True)
+            response: ChatCompletion = await async_create(model=self.chatModel, messages=self.conversation_history)
+            bot_response = response.choices[0].message.content
+            self.conversation_history.append({'role': 'assistant', 'content': bot_response})
+        else:
+            # Try web search if conditions are met, otherwise use regular chat
+            if (
+                os.getenv("OPENAI_ENABLED") == "True"
+                and (use_web_search or self.web_search_mode)
+                and self.openai_client is not None
+            ):
+                try:
+                    # Use a web search compatible model
+                    web_search_model = os.getenv("WEB_SEARCH_MODEL", "gpt-4.1") 
+                    
+                    response = await self.openai_client.responses.create(
+                        model=web_search_model,
+                        tools=[{"type": "web_search_preview", "search_context_size": "low"}],
+                        input=user_message
+                    )
+                    bot_response = response.output_text
+                    self.conversation_history.append({'role': 'user', 'content': user_message})
+                    self.conversation_history.append({'role': 'assistant', 'content': bot_response})
+                    return bot_response
+                except Exception as e:
+                    logger.warning(f"Web search failed, falling back to regular chat: {e}")
+            
+            # Regular chat completions (either by choice or fallback from web search)
+            bot_response = await self._handle_openai_chat_completion(user_message)
+
+        return bot_response
+
+    async def handle_web_search_response(self, user_message) -> str:
+        """Handle responses that require web search capabilities"""
+        return await self.handle_response(user_message, use_web_search=True)
+
+    async def _handle_openai_chat_completion(self, user_message) -> str:
+        """Handle regular OpenAI chat completions"""
+        self.conversation_history.append({'role': 'user', 'content': user_message})
+        if len(self.conversation_history) > 26:
+            del self.conversation_history[4:6]
+        
+        response = await self.openai_client.chat.completions.create(
+            model=self.chatModel,
+            messages=self.conversation_history
+        )
+        
+        bot_response = response.choices[0].message.content
+        self.conversation_history.append({'role': 'assistant', 'content': bot_response})
+        return bot_response
+
     def reset_conversation_history(self):
         self.conversation_history = []
         personas.current_persona = "standard"
@@ -153,22 +238,4 @@ class discordClient(discord.Client):
         await self.handle_response(persona_prompt)
         # await self.send_start_prompt()
 
-    async def handle_response(self, user_message) -> str:
-            self.conversation_history.append({'role': 'user', 'content': user_message})
-            if len(self.conversation_history) > 26:
-                del self.conversation_history[4:6]
-
-            if os.getenv("OPENAI_ENABLED") == "False":
-                async_create = sync_to_async(self.chatBot.chat.completions.create, thread_sensitive=True)
-                response: ChatCompletion = await async_create(model=self.chatModel, messages=self.conversation_history)
-            else:
-                response = await self.openai_client.chat.completions.create(
-                    model=self.chatModel,
-                    messages=self.conversation_history
-                )
-
-            bot_response = response.choices[0].message.content
-            self.conversation_history.append({'role': 'assistant', 'content': bot_response})
-
-            return bot_response
 discordClient = discordClient()
