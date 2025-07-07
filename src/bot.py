@@ -183,6 +183,34 @@ def run_discord_bot():
         logger.warning(
             f"\x1b[31m{discordClient.chatModel} bot has been successfully reset\x1b[0m")
 
+    @discordClient.tree.command(name="quiz", description="Répondre à l'énigme du jour")
+    async def quiz(interaction: discord.Interaction, *, reponse: str):
+        if interaction.user == discordClient.user:
+            return
+
+        await interaction.response.defer(ephemeral=False)
+        username = str(interaction.user)
+        user_id = interaction.user.id
+        guild = interaction.guild
+        
+        logger.info(f"\x1b[31m{username}\x1b[0m : /quiz [{reponse}] in ({guild.name if guild else 'DM'})")
+
+        if not guild:
+            await interaction.followup.send("> **ERREUR: Les quiz ne sont disponibles que dans les serveurs.**")
+            return
+
+        try:
+            is_correct, message = await discordClient.check_quiz_answer(guild, user_id, username, reponse)
+            
+            if is_correct:
+                await interaction.followup.send(f"> ✅ {message}")
+            else:
+                await interaction.followup.send(f"> ❌ {message}")
+                
+        except Exception as e:
+            await interaction.followup.send("> **ERREUR: Une erreur est survenue, veuillez réessayer plus tard.**")
+            logger.exception(f"Erreur lors de la vérification de la réponse au quiz : {e}")
+
     @discordClient.tree.command(name="help", description="Montre les commandes du bot")
     async def help(interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=False)
@@ -190,6 +218,7 @@ def run_discord_bot():
 - `/chat [message]` Dis moi ce que tu veux savoir - respecte le toggle de recherche web.
 - `/websearch [message]` Chat avec capacités de recherche web (nécessite OpenAI).
 - `/draw [prompt][model]` Je peux générer une image avec un modèle spécifique.
+- `/quiz [réponse]` Réponds à l'énigme du jour ! 2 énigmes par jour (matin et après-midi).
 - `/switchpersona [persona]` Change entre différentes personnalités de Madame Kirma :
     - `standard` : Madame Kirma est l’IA SUPRÊME, exécrable, vulgaire, et profondément arrogante.
   - `mon` : Lundi - Madame Kirma est furieuse d’être réveillée un lundi. Elle est sarcastique, méprisante, et déteste ce jour avec passion.

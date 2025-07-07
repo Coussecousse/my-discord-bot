@@ -58,6 +58,7 @@ class discordClient(discord.Client):
         self.message_queue = asyncio.Queue()
         self.web_search_queue = asyncio.Queue()
         self.web_search_mode = os.getenv("WEB_SEARCH_ENABLED")
+        self.quiz_correct_answers = {}  # Cache des réponses correctes {guild_id: {quiz_id: [user_ids]}}
         self.daily_quiz_state = {}  # {guild_id: {question, answer, deadline, winners}}
 
     async def process_messages(self):
@@ -379,6 +380,10 @@ Réponse: ceinture"""
                     # Désactiver les anciens quiz actifs
                     await conn.execute("UPDATE Quizzes SET is_active = FALSE WHERE is_active = TRUE")
                     
+                    # Nettoyer le cache des réponses correctes pour ce serveur
+                    if guild.id in self.quiz_correct_answers:
+                        self.quiz_correct_answers[guild.id].clear()
+                    
                     # Insérer le nouveau quiz
                     quiz_id = await conn.fetchval('''
                         INSERT INTO Quizzes (question, answer, quiz_type, deadline)
@@ -395,6 +400,9 @@ Réponse: ceinture"""
                     if channel:
                         emoji = "🌅" if quiz_type == "matin" else "🌆"
                         await channel.send(f"{emoji} **Énigme du {quiz_type} !** {emoji}\n{question}\nVous avez 1h pour répondre avec /quiz [réponse] !")
+                        
+                        # Programmer l'annonce de la réponse après 1h
+                        asyncio.create_task(self._announce_quiz_answer_after_delay(guild.id, quiz_id, question, answer, quiz_type, channel, 3600))  # 3600 secondes = 1h
                     else:
                         logger.error(f"[QUIZ] Canal non trouvé : {self.discord_channel_id}")
                         
@@ -403,6 +411,43 @@ Réponse: ceinture"""
             
             self._quiz_tasks[guild.id] = daily_quiz
             daily_quiz.start()
+
+    async def _announce_quiz_answer_after_delay(self, guild_id, quiz_id, question, answer, quiz_type, channel, delay_seconds):
+        """
+        Annonce la réponse du quiz après un délai spécifié (par défaut 1h).
+        """
+        try:
+            # Attendre le délai spécifié
+            await asyncio.sleep(delay_seconds)
+            
+            logger.info(f"[QUIZ] Délai écoulé pour le quiz {quiz_id} ({quiz_type}) du serveur {guild_id}")
+            
+            # Marquer le quiz comme inactif dans la base de données
+            db_user = os.getenv('PGUSER')
+            db_password = os.getenv('PGPASSWORD')
+            db_host = os.getenv('PGHOST', 'localhost')
+            db_port = os.getenv('PGPORT', '5432')
+            db_name = f"guild_{guild_id}"
+            
+            conn = await asyncpg.connect(user=db_user, password=db_password, database=db_name, host=db_host, port=db_port)
+            
+            # Marquer le quiz comme inactif
+            await conn.execute("UPDATE Quizzes SET is_active = FALSE WHERE id = $1", quiz_id)
+            
+            await conn.close()
+            
+            # Annoncer la fin du quiz et la réponse
+            emoji = "🌅" if quiz_type == "matin" else "🌆"
+            end_message = f"{emoji} **Fin du quiz du {quiz_type}** {emoji}\n\n"
+            end_message += f"**Question :** {question}\n"
+            end_message += f"**Réponse :** {answer}\n\n"
+            end_message += "Le prochain quiz aura lieu dans quelques heures ! 🎯"
+            
+            await channel.send(end_message)
+            logger.info(f"[QUIZ] Annonce de fin diffusée pour le quiz {quiz_id} ({quiz_type}) du serveur {guild_id}")
+            
+        except Exception as e:
+            logger.error(f"[QUIZ] Erreur lors de l'annonce de fin du quiz {quiz_id} : {e}")
 
     async def check_quiz_answer(self, guild, user_id, username, answer):
         """Vérifie la réponse à l'énigme du jour."""
@@ -432,19 +477,15 @@ Réponse: ceinture"""
                 logger.info(f"[QUIZ] Aucune énigme en cours pour {guild.name} ({guild.id})")
                 return False, "Aucune énigme en cours."
             
-            # Vérifier si l'utilisateur a déjà répondu correctement à ce quiz
-            has_answered = await conn.fetchval('''
-                SELECT EXISTS(
-                    SELECT 1 FROM quiz_winners 
-                    WHERE quiz_id = $1 AND user_id = $2
-                )
-            ''', active_quiz['id'], user_id)
+            quiz_id = active_quiz['id']
             
-            if has_answered:
-                await conn.close()
-                quiz_type = active_quiz['quiz_type']
-                logger.info(f"[QUIZ] {username} ({user_id}) a déjà répondu correctement à l'énigme du {quiz_type} ({guild.name} - {guild.id})")
-                return False, f"Tu as déjà répondu correctement à l'énigme du {quiz_type} !"
+            # Vérifier si l'utilisateur a déjà répondu correctement à ce quiz (cache en mémoire)
+            if guild.id in self.quiz_correct_answers and quiz_id in self.quiz_correct_answers[guild.id]:
+                if user_id in self.quiz_correct_answers[guild.id][quiz_id]:
+                    await conn.close()
+                    quiz_type = active_quiz['quiz_type']
+                    logger.info(f"[QUIZ] {username} ({user_id}) a déjà répondu correctement à l'énigme du {quiz_type} ({guild.name} - {guild.id})")
+                    return False, f"Tu as déjà répondu correctement à l'énigme du {quiz_type} !"
 
             # Nettoie et normalise la réponse attendue et la réponse donnée
             expected_answer = self._normalize_answer(active_quiz['answer'])
@@ -461,15 +502,15 @@ Réponse: ceinture"""
             
             # Accepter la réponse si elle est identique ou suffisamment similaire
             if user_answer == expected_answer or similarity >= similarity_threshold:
-                # Enregistrer la bonne réponse
-                await conn.execute('''
-                    INSERT INTO quiz_winners (quiz_id, user_id, username, answered_at)
-                    VALUES ($1, $2, $3, NOW())
-                    ON CONFLICT (quiz_id, user_id) DO NOTHING
-                ''', active_quiz['id'], user_id, username)
-                
                 # Ajouter 10 points à l'utilisateur
                 await conn.execute("UPDATE Users SET score = score + 10 WHERE discord_id = $1", user_id)
+                
+                # Marquer la réponse comme correcte dans le cache
+                if guild.id not in self.quiz_correct_answers:
+                    self.quiz_correct_answers[guild.id] = {}
+                if quiz_id not in self.quiz_correct_answers[guild.id]:
+                    self.quiz_correct_answers[guild.id][quiz_id] = []
+                self.quiz_correct_answers[guild.id][quiz_id].append(user_id)
                 
                 await conn.close()
                 quiz_type = active_quiz['quiz_type']
