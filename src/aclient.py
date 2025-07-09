@@ -150,14 +150,15 @@ class discordClient(discord.Client):
                     prompt = f"Génère un message du jour en utilisant ta personnalité actuelle donnant les vrais actualités du jour dans un maximum de 1500 caractères (ce point est très important) et ne donne pas d'url."
 
                     generated_message = await self.handle_web_search_response(prompt)
-                    
                     # Envoie le message généré dans le canal
                     await channel.send(generated_message)
                     print(f"[INFO] Message du jour envoyé : {generated_message}")
                 except Exception as e:
                     logger.exception(f"Erreur lors de l'envoi du message du jour : {e}")
+                    print(f"[ERREUR] Erreur lors de l'envoi du message du jour : {e}")
             else:
                 logger.error(f"Canal non trouvé : {self.discord_channel_id}")
+                print(f"[ERREUR] Canal non trouvé : {self.discord_channel_id}")
         else:
             print("[DEBUG] Pas l'heure d'envoyer le message du jour.")
 
@@ -171,15 +172,17 @@ class discordClient(discord.Client):
             if self.starting_prompt and self.discord_channel_id:
                 channel = self.get_channel(int(self.discord_channel_id))
                 logger.info(f"Sending system prompt with size {len(self.starting_prompt)}")
-
+                print(f"[INFO] Envoi du system prompt (taille : {len(self.starting_prompt)})")
                 response = await self.handle_response(self.starting_prompt)
                 await channel.send(f"{response}")
-
                 logger.info(f"System prompt response: {response}")
+                print(f"[INFO] System prompt envoyé dans le channel {self.discord_channel_id}")
             else:
                 logger.info("No starting prompt or Discord channel configured. Skipping.")
+                print("[INFO] Aucun system prompt ou channel configuré. Skip.")
         except Exception as e:
             logger.exception(f"Error while sending system prompt: {e}")
+            print(f"[ERREUR] Error while sending system prompt: {e}")
 
     async def handle_response(self, user_message, use_web_search=False) -> str:
         if os.getenv("OPENAI_ENABLED") == "False" or self.openai_client is None:
@@ -292,6 +295,14 @@ class discordClient(discord.Client):
             );
         ''')
         
+        # Ajouter la table Settings pour stocker les paramètres du serveur
+        await guild_conn.execute('''
+            CREATE TABLE IF NOT EXISTS Settings (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            );
+        ''')
+        
         # Ajout des membres du serveur dans la table Users
         await self.insert_guild_members(guild_conn, guild)
         await guild_conn.close()
@@ -307,36 +318,82 @@ class discordClient(discord.Client):
                 ''', member.id, str(member))
         logger.info(f"[DB] Membres ajoutés/présents dans la table Users pour {guild.name} ({guild.id})")
 
-    def start_daily_quiz_task(self, guild):
+    async def get_guild_quiz_channel_id(self, guild_id):
+        """Récupère le channel_id du quiz pour un serveur depuis la table Settings."""
+        db_user = os.getenv('PGUSER')
+        db_password = os.getenv('PGPASSWORD')
+        db_host = os.getenv('PGHOST', 'localhost')
+        db_port = os.getenv('PGPORT', '5432')
+        db_name = f"guild_{guild_id}"
+        try:
+            conn = await asyncpg.connect(user=db_user, password=db_password, database=db_name, host=db_host, port=db_port)
+            await conn.execute('''CREATE TABLE IF NOT EXISTS Settings (key TEXT PRIMARY KEY, value TEXT)''')
+            row = await conn.fetchrow("SELECT value FROM Settings WHERE key = 'DISCORD_CHANNEL_ID'")
+            await conn.close()
+            if row:
+                return int(row['value'])
+        except Exception as e:
+            logger.error(f"[QUIZ] Erreur lors de la récupération du channel_id dans Settings: {e}")
+        return int(self.discord_channel_id)  # fallback
+
+    async def set_guild_quiz_channel_id(self, guild_id, channel_id):
+        """Met à jour le channel_id du quiz pour un serveur dans la table Settings."""
+        db_user = os.getenv('PGUSER')
+        db_password = os.getenv('PGPASSWORD')
+        db_host = os.getenv('PGHOST', 'localhost')
+        db_port = os.getenv('PGPORT', '5432')
+        db_name = f"guild_{guild_id}"
+        try:
+            conn = await asyncpg.connect(user=db_user, password=db_password, database=db_name, host=db_host, port=db_port)
+            await conn.execute('''CREATE TABLE IF NOT EXISTS Settings (key TEXT PRIMARY KEY, value TEXT)''')
+            await conn.execute('''INSERT INTO Settings (key, value) VALUES ('DISCORD_CHANNEL_ID', $1) ON CONFLICT (key) DO UPDATE SET value = $1''', str(channel_id))
+            await conn.close()
+            logger.info(f"[QUIZ] Channel quiz mis à jour dans Settings: {channel_id} pour {guild_id}")
+        except Exception as e:
+            logger.error(f"[QUIZ] Erreur lors de la mise à jour du channel_id dans Settings: {e}")
+
+    @app_commands.command(name="setquizchannel", description="Définit le salon pour les quiz (admin seulement)")
+    async def set_quiz_channel(self, interaction: discord.Interaction, channel: discord.TextChannel):
+        """Slash command pour définir le salon quiz (admin seulement)."""
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("❌ Seuls les administrateurs peuvent utiliser cette commande.", ephemeral=True)
+            return
+        await self.set_guild_quiz_channel_id(interaction.guild.id, channel.id)
+        await interaction.response.send_message(f"✅ Salon quiz mis à jour : {channel.mention}", ephemeral=True)
+
+    async def start_daily_quiz_task(self, guild):
         """Démarre la tâche de quiz quotidien pour un serveur."""
+        logger.info(f"[QUIZ] Appel de start_daily_quiz_task pour {guild.name} ({guild.id})")
         if not hasattr(self, '_quiz_tasks'):
+            logger.debug("[QUIZ] Création de l'attribut _quiz_tasks")
             self._quiz_tasks = {}
         if guild.id not in self._quiz_tasks:
+            logger.info(f"[QUIZ] Initialisation de la loop daily_quiz pour {guild.name} ({guild.id})")
             @tasks.loop(hours=12)  # Toutes les 12h pour avoir 2 quiz par jour
             async def daily_quiz():
                 now = datetime.now()
-                
+                logger.info(f"[QUIZ] daily_quiz déclenché à {now} pour {guild.name} ({guild.id})")
                 # Détermine si c'est le quiz du matin (8h-14h) ou de l'après-midi (15h-22h)
                 if now.hour < 14:
-                    # Quiz du matin : entre 8h et 14h
                     hour = random.randint(8, 14)
                     quiz_type = "matin"
+                    logger.info(f"[QUIZ] Sélection du créneau matin pour {guild.name} ({guild.id})")
                 else:
-                    # Quiz de l'après-midi : entre 15h et 22h
                     hour = random.randint(15, 22)
                     quiz_type = "après-midi"
-                
+                    logger.info(f"[QUIZ] Sélection du créneau après-midi pour {guild.name} ({guild.id})")
                 minute = random.randint(0, 59)
-                next_quiz_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-                logger.info(f"[QUIZ] Prochain quiz ({quiz_type}) pour {guild.name} ({guild.id}) prévu à {next_quiz_time.strftime('%Y-%m-%d %H:%M:%S')}")
-                
+                # next_quiz_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+                # TEST
+                next_quiz_time = now + timedelta(minutes=1)
+                logger.info(f"[QUIZ] Prochain quiz ({quiz_type}) prévu à {next_quiz_time.strftime('%Y-%m-%d %H:%M:%S')} pour {guild.name} ({guild.id})")
                 if next_quiz_time < now:
+                    logger.debug(f"[QUIZ] next_quiz_time < now, ajout de 12h")
                     next_quiz_time += timedelta(hours=12)
-                
                 wait_seconds = (next_quiz_time - now).total_seconds()
+                logger.info(f"[QUIZ] Attente de {wait_seconds:.0f} secondes avant le prochain quiz pour {guild.name} ({guild.id})")
                 await asyncio.sleep(wait_seconds)
-                
-                # Générer une énigme et sa réponse via l'IA
+                logger.info(f"[QUIZ] Génération de l'énigme IA pour {guild.name} ({guild.id})")
                 prompt = """Génère une énigme originale (pas une devinette connue) avec une réponse courte et précise.
 
 RÈGLES IMPORTANTES :
@@ -356,7 +413,7 @@ Réponse: biscuit
 Question: Plus je suis percé, plus je tiens fermement.
 Réponse: ceinture"""
                 ia_response = await self.handle_response(prompt)
-                
+                logger.info(f"[QUIZ] Réponse IA brute : {ia_response}")
                 # Extraction question/réponse
                 question, answer = None, None
                 for line in ia_response.splitlines():
@@ -364,56 +421,59 @@ Réponse: ceinture"""
                         question = line.split(":", 1)[1].strip()
                     if line.lower().startswith("réponse:") or line.lower().startswith("reponse:"):
                         answer = line.split(":", 1)[1].strip()
-                
+                logger.info(f"[QUIZ] Extraction : question='{question}', answer='{answer}' pour {guild.name} ({guild.id})")
                 if not question or not answer:
                     logger.error(f"[QUIZ] Échec extraction énigme IA : {ia_response}")
                     return  # Ne lance pas le quiz si extraction échouée
-                
                 deadline = datetime.now() + timedelta(hours=1)
-                
+                # TEST
+                # deadline = next_quiz_time + timedelta(minutes=1)
+                logger.info(f"[QUIZ] Deadline du quiz : {deadline} pour {guild.name} ({guild.id})")
                 # Insérer le quiz dans la base de données du serveur
                 db_user = os.getenv('PGUSER')
                 db_password = os.getenv('PGPASSWORD')
                 db_host = os.getenv('PGHOST', 'localhost')
                 db_port = os.getenv('PGPORT', '5432')
                 db_name = f"guild_{guild.id}"
-                
                 try:
+                    logger.info(f"[QUIZ] Connexion à la base {db_name} pour {guild.name} ({guild.id})")
                     conn = await asyncpg.connect(user=db_user, password=db_password, database=db_name, host=db_host, port=db_port)
-                    
-                    # Désactiver les anciens quiz actifs
                     await conn.execute("UPDATE Quizzes SET is_active = FALSE WHERE is_active = TRUE")
-                    
-                    # Nettoyer le cache des réponses correctes pour ce serveur
+                    logger.info(f"[QUIZ] Anciens quiz désactivés pour {guild.name} ({guild.id})")
                     if guild.id in self.quiz_correct_answers:
                         self.quiz_correct_answers[guild.id].clear()
-                    
-                    # Insérer le nouveau quiz
+                        logger.info(f"[QUIZ] Cache des bonnes réponses vidé pour {guild.name} ({guild.id})")
                     quiz_id = await conn.fetchval('''
                         INSERT INTO Quizzes (question, answer, quiz_type, deadline)
                         VALUES ($1, $2, $3, $4)
                         RETURNING id
                     ''', question, answer.lower(), quiz_type, deadline)
-                    
                     await conn.close()
-                    
                     logger.info(f"[QUIZ] Énigme ({quiz_type}) générée et enregistrée (ID: {quiz_id}) pour {guild.name} ({guild.id}) : {question}")
                     logger.info(f"[QUIZ] Réponse attendue : {answer}")
-                    
-                    channel = self.get_channel(int(self.discord_channel_id))
-                    if channel:
-                        emoji = "🌅" if quiz_type == "matin" else "🌆"
-                        await channel.send(f"{emoji} **Énigme du {quiz_type} !** {emoji}\n{question}\nVous avez 1h pour répondre avec /quiz [réponse] !")
-                        
-                        # Programmer l'annonce de la réponse après 1h
-                        asyncio.create_task(self._announce_quiz_answer_after_delay(guild.id, quiz_id, question, answer, quiz_type, channel, 3600))  # 3600 secondes = 1h
+                    # Récupérer le salon de quiz depuis la base
+                    quiz_channel_id = await self.get_guild_quiz_channel_id(guild.id)
+                    if quiz_channel_id:
+                        channel = self.get_channel(quiz_channel_id)
                     else:
-                        logger.error(f"[QUIZ] Canal non trouvé : {self.discord_channel_id}")
-                        
+                        channel = self.get_channel(int(self.discord_channel_id)) if self.discord_channel_id else None
+
+                    if channel and getattr(channel, 'guild', None) and channel.guild.id == guild.id:
+                        print(f"[QUIZ] Envoi de l'énigme dans le channel {channel.id} pour {guild.name} ({guild.id})")
+                        # DEBUG
+                        emoji = "🌅" if quiz_type == "matin" else "🌆"
+                        await channel.send(f"{emoji} **Énigme !** {emoji}\n{question}\nVous avez 1h pour répondre avec /quiz [réponse] !")
+                        logger.info(f"[QUIZ] Énigme envoyée dans le channel {channel.id} pour {guild.name} ({guild.id})")
+                        asyncio.create_task(self._announce_quiz_answer_after_delay(guild.id, quiz_id, question, answer, quiz_type, channel, 3600))
+                        # TEST
+                        # asyncio.create_task(self._announce_quiz_answer_after_delay(guild.id, quiz_id, question, answer, quiz_type, channel, 60))
+                        logger.info(f"[QUIZ] Tâche d'annonce de la réponse programmée pour {guild.name} ({guild.id})")
+                    else:
+                        logger.error(f"[QUIZ] Canal non trouvé ou n'appartient pas au serveur : {getattr(channel, 'id', None)} pour {guild.name} ({guild.id})")
                 except Exception as e:
                     logger.error(f"[QUIZ] Erreur base de données lors de la création du quiz : {e}")
-            
             self._quiz_tasks[guild.id] = daily_quiz
+            logger.info(f"[QUIZ] Lancement de la loop daily_quiz pour {guild.name} ({guild.id})")
             daily_quiz.start()
 
     async def _announce_quiz_answer_after_delay(self, guild_id, quiz_id, question, answer, quiz_type, channel, delay_seconds):
@@ -445,7 +505,6 @@ Réponse: ceinture"""
             end_message = f"{emoji} **Fin du quiz du {quiz_type}** {emoji}\n\n"
             end_message += f"**Question :** {question}\n"
             end_message += f"**Réponse :** {answer}\n\n"
-            end_message += "Le prochain quiz aura lieu dans quelques heures ! 🎯"
             
             await channel.send(end_message)
             logger.info(f"[QUIZ] Annonce de fin diffusée pour le quiz {quiz_id} ({quiz_type}) du serveur {guild_id}")

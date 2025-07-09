@@ -51,27 +51,45 @@ def setup_rotating_logger():
 setup_rotating_logger()
 
 def run_discord_bot():            
+    # Instanciation du client Discord AVANT la déclaration des events/commandes
+    client = discordClient
 
-    @discordClient.event
+    @client.event
     async def on_ready():
         global skip_first_loop
-        await discordClient.send_start_prompt()
-        await discordClient.tree.sync()
+        await client.tree.sync()
+        print("[BOT] Synchronisation des commandes slash terminée.")
+        for guild in client.guilds:
+            logger.info(f"[DB] Initialisation de la base pour le serveur {guild.name} ({guild.id})")
+            print(f"[BOT] Initialisation de la base pour {guild.name} ({guild.id})")
+            await client.create_database_for_guild(guild)
+            # Lancer le quiz quotidien (une seule fois par jour)
+            print(f"[BOT] Lancement du quiz quotidien pour {guild.name} ({guild.id})")
+            await client.start_daily_quiz_task(guild)
+        await client.send_start_prompt()
+        print("[BOT] Prompt de démarrage envoyé.")
         loop = asyncio.get_event_loop()
-        loop.create_task(discordClient.process_messages())
-        logger.info(f'{discordClient.user} est connecté!')
+        loop.create_task(client.process_messages())
+        logger.info(f'{client.user} est connecté!')
+        print(f"[BOT] {client.user} est connecté!")
 
+    @client.event
+    async def on_guild_join(guild):
+        logger.info(f"Nouveau serveur rejoint : {guild.name} ({guild.id})")
+        print(f"[BOT] Nouveau serveur rejoint : {guild.name} ({guild.id})")
+        logger.info(f"[DB] Initialisation de la base pour le serveur {guild.name} ({guild.id})")
+        await client.create_database_for_guild(guild)
 
-    @discordClient.tree.command(name="websearch", description="Chat with web search capabilities")
+    @client.tree.command(name="websearch", description="Chat with web search capabilities")
     async def websearch(interaction: discord.Interaction, *, message: str):
         try:
             await interaction.response.defer(ephemeral=False)
-            if discordClient.is_replying_all == "True":
+            if client.is_replying_all == "True":
                 await interaction.followup.send(
                     "> **ATTENTION : Vous êtes déjà en mode replyAll. Pour utiliser la commande Slash, repassez en mode normal avec `/replyall` à nouveau.**")
                 logger.warning("\x1b[31mVous êtes déjà en mode replyAll, impossible d'utiliser la commande slash !\x1b[0m")
                 return
-            if interaction.user == discordClient.user:
+            if interaction.user == client.user:
                 return
 
             # Check if OpenAI is enabled for web search
@@ -82,11 +100,11 @@ def run_discord_bot():
                 return
 
             username = str(interaction.user)
-            discordClient.current_channel = interaction.channel
+            client.current_channel = interaction.channel
             logger.info(
-                f"\x1b[31m{username}\x1b[0m : /websearch [{message}] in ({discordClient.current_channel})")
+                f"\x1b[31m{username}\x1b[0m : /websearch [{message}] in ({client.current_channel})")
 
-            await discordClient.enqueue_web_search_message(interaction, message, already_deferred=True)
+            await client.enqueue_web_search_message(interaction, message, already_deferred=True)
         except Exception as e:
             try:
                 await interaction.followup.send("> Une erreur est survenue, veuillez réessayer plus tard.")
@@ -94,27 +112,27 @@ def run_discord_bot():
                 pass
             logger.exception(f"Erreur dans la commande websearch: {e}")
 
-    @discordClient.tree.command(name="chat", description="Discute avec moi")
+    @client.tree.command(name="chat", description="Discute avec moi")
     async def chat(interaction: discord.Interaction, *, message: str):
         try:
-            if discordClient.is_replying_all == "True":
+            if client.is_replying_all == "True":
                 await interaction.response.defer(ephemeral=False)
                 await interaction.followup.send(
                     "> **ATTENTION : Vous êtes déjà en mode replyAll. Pour utiliser la commande Slash, repassez en mode normal avec `/replyall` à nouveau.**")
                 logger.warning("\x1b[31mVous êtes déjà en mode replyAll, impossible d'utiliser la commande slash !\x1b[0m")
                 return
-            if interaction.user == discordClient.user:
+            if interaction.user == client.user:
                 return
             username = str(interaction.user)
-            discordClient.current_channel = interaction.channel
+            client.current_channel = interaction.channel
             logger.info(
-                f"\x1b[31m{username}\x1b[0m : /chat [{message}] in ({discordClient.current_channel})")
+                f"\x1b[31m{username}\x1b[0m : /chat [{message}] in ({client.current_channel})")
 
             # Check if web search mode is enabled and use appropriate method
-            if discordClient.web_search_mode and os.getenv("OPENAI_ENABLED") == "True":
-                await discordClient.enqueue_web_search_message(interaction, message, already_deferred=True)
+            if client.web_search_mode and os.getenv("OPENAI_ENABLED") == "True":
+                await client.enqueue_web_search_message(interaction, message, already_deferred=True)
             else:
-                await discordClient.enqueue_message(interaction, message)
+                await client.enqueue_message(interaction, message)
         except Exception as e:
             try:
                 await interaction.followup.send("> Une erreur est survenue, veuillez réessayer plus tard.")
@@ -122,12 +140,12 @@ def run_discord_bot():
                 pass
             logger.exception(f"Erreur dans la commande chat: {e}")
 
-    @discordClient.tree.command(name="private", description="Toggle private access")
+    @client.tree.command(name="private", description="Toggle private access")
     async def private(interaction: discord.Interaction):
         try:
             await interaction.response.defer(ephemeral=False)
-            if not discordClient.isPrivate:
-                discordClient.isPrivate = not discordClient.isPrivate
+            if not client.isPrivate:
+                client.isPrivate = not client.isPrivate
                 logger.warning("\x1b[31mPassage en mode privé\x1b[0m")
                 await interaction.followup.send(
                     "> **INFO : Désormais, la réponse sera envoyée en privé. Pour revenir en mode public, utilisez `/public`.**")
@@ -142,12 +160,12 @@ def run_discord_bot():
                 pass
             logger.exception(f"Erreur dans la commande private: {e}")
 
-    @discordClient.tree.command(name="public", description="Toggle public access")
+    @client.tree.command(name="public", description="Toggle public access")
     async def public(interaction: discord.Interaction):
         try:
             await interaction.response.defer(ephemeral=False)
-            if discordClient.isPrivate:
-                discordClient.isPrivate = not discordClient.isPrivate
+            if client.isPrivate:
+                client.isPrivate = not client.isPrivate
                 await interaction.followup.send(
                     "> **INFO : Désormais, la réponse sera envoyée directement dans le salon. Pour revenir en mode privé, utilisez `/private`.**")
                 logger.warning("\x1b[31mPassage en mode public\x1b[0m")
@@ -162,7 +180,7 @@ def run_discord_bot():
                 pass
             logger.exception(f"Erreur dans la commande public: {e}")
 
-    @discordClient.tree.command(name="togglewebsearch", description="Toggle web search mode for all chat commands")
+    @client.tree.command(name="togglewebsearch", description="Toggle web search mode for all chat commands")
     async def togglewebsearch(interaction: discord.Interaction):
         try:
             await interaction.response.defer(ephemeral=False)
@@ -174,9 +192,9 @@ def run_discord_bot():
                 logger.error("Changement de mode recherche web tenté mais OpenAI est désactivé")
                 return
 
-            discordClient.web_search_mode = not discordClient.web_search_mode
+            client.web_search_mode = not client.web_search_mode
 
-            if discordClient.web_search_mode:
+            if client.web_search_mode:
                 await interaction.followup.send(
                     "> **INFO : Mode recherche web activé. Toutes les commandes chat (/chat et replyall) utiliseront désormais la recherche web.**")
                 logger.info("Mode recherche web activé pour toutes les commandes chat")
@@ -191,18 +209,18 @@ def run_discord_bot():
                 pass
             logger.exception(f"Erreur dans la commande togglewebsearch: {e}")
 
-    @discordClient.tree.command(name="replyall", description="Toggle replyAll access")
+    @client.tree.command(name="replyall", description="Toggle replyAll access")
     async def replyall(interaction: discord.Interaction):
         try:
-            discordClient.replying_all_discord_channel_id = str(interaction.channel_id)
+            client.replying_all_discord_channel_id = str(interaction.channel_id)
             await interaction.response.defer(ephemeral=False)
-            if discordClient.is_replying_all == "True":
-                discordClient.is_replying_all = "False"
+            if client.is_replying_all == "True":
+                client.is_replying_all = "False"
                 await interaction.followup.send(
                     "> **INFO : Désormais, le bot répondra uniquement aux commandes Slash. Pour revenir en mode replyAll, utilisez `/replyAll` à nouveau.**")
                 logger.warning("\x1b[31mPassage en mode normal\x1b[0m")
-            elif discordClient.is_replying_all == "False":
-                discordClient.is_replying_all = "True"
+            elif client.is_replying_all == "False":
+                client.is_replying_all = "True"
                 await interaction.followup.send(
                     "> **INFO : Désormais, le bot désactive les commandes Slash et répond à tous les messages dans ce salon uniquement. Pour revenir en mode normal, utilisez `/replyAll` à nouveau.**")
                 logger.warning("\x1b[31mPassage en mode replyAll\x1b[0m")
@@ -213,7 +231,7 @@ def run_discord_bot():
                 pass
             logger.exception(f"Erreur dans la commande replyall: {e}")
 
-    # @discordClient.tree.command(name="chat-model", description="Change de modèle entre 'gemini' et 'gpt-4'")
+    # @client.tree.command(name="chat-model", description="Change de modèle entre 'gemini' et 'gpt-4'")
     # @app_commands.choices(model=[
     #     app_commands.Choice(name="gemini", value="gemini"),
     #     app_commands.Choice(name="gpt-4", value="gpt-4"),
@@ -223,17 +241,17 @@ def run_discord_bot():
     #     await interaction.response.defer(ephemeral=True)
     #     try:
     #         if model.value == "gemini":
-    #             discordClient.reset_conversation_history()
-    #             discordClient.chatBot = Client(provider=RetryProvider([Gemini, FreeChatgpt], shuffle=False))
-    #             discordClient.chatModel = model.value
+    #             client.reset_conversation_history()
+    #             client.chatBot = Client(provider=RetryProvider([Gemini, FreeChatgpt], shuffle=False))
+    #             client.chatModel = model.value
     #         elif model.value == "gpt-4":
-    #             discordClient.reset_conversation_history()
-    #             discordClient.chatBot = Client(provider=RetryProvider([Liaobots, You, OpenaiChat, Bing], shuffle=False))
-    #             discordClient.chatModel = model.value
+    #             client.reset_conversation_history()
+    #             client.chatBot = Client(provider=RetryProvider([Liaobots, You, OpenaiChat, Bing], shuffle=False))
+    #             client.chatModel = model.value
     #         elif model.value == "gpt-3.5-turbo":
-    #             discordClient.reset_conversation_history()
-    #             discordClient.chatBot = Client(provider=RetryProvider([FreeGpt, ChatgptNext, AItianhuSpace], shuffle=False))
-    #             discordClient.chatModel = model.value
+    #             client.reset_conversation_history()
+    #             client.chatBot = Client(provider=RetryProvider([FreeGpt, ChatgptNext, AItianhuSpace], shuffle=False))
+    #             client.chatModel = model.value
 
     #         await interaction.followup.send(f"> **INFO: Chat model switched to {model.name}.**")
     #         logger.info(f"Switched chat model to {model.name}")
@@ -242,16 +260,16 @@ def run_discord_bot():
     #         await interaction.followup.send(f'> **Error Switching Model: {e}**')
     #         logger.error(f"Error switching chat model: {e}")
 
-    @discordClient.tree.command(name="reset", description="Reset la discussion")
+    @client.tree.command(name="reset", description="Reset la discussion")
     async def reset(interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=False)
-        discordClient.conversation_history = []
+        client.conversation_history = []
         await interaction.followup.send("> **INFO: J'ai tout oublié.**")
         personas.current_persona = "standard"
         logger.warning(
-            f"\x1b[31m{discordClient.chatModel} bot has been successfully reset\x1b[0m")
+            f"\x1b[31m{client.chatModel} bot has been successfully reset\x1b[0m")
 
-    @discordClient.tree.command(name="lastupdate", description="Affiche la date et le contenu de la dernière mise à jour du bot")
+    @client.tree.command(name="lastupdate", description="Affiche la date et le contenu de la dernière mise à jour du bot")
     async def lastupdate(interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         await interaction.followup.send(
@@ -259,9 +277,9 @@ def run_discord_bot():
             f"**Changements :**\n{LAST_UPDATE_SUMMARY}"
         )
 
-    @discordClient.tree.command(name="quiz", description="Répondre à l'énigme du jour")
+    @client.tree.command(name="quiz", description="Répondre à l'énigme du jour")
     async def quiz(interaction: discord.Interaction, *, reponse: str):
-        if interaction.user == discordClient.user:
+        if interaction.user == client.user:
             return
 
         await interaction.response.defer(ephemeral=False)
@@ -276,7 +294,7 @@ def run_discord_bot():
             return
 
         try:
-            is_correct, message = await discordClient.check_quiz_answer(guild, user_id, username, reponse)
+            is_correct, message = await client.check_quiz_answer(guild, user_id, username, reponse)
             
             if is_correct:
                 await interaction.followup.send(f"> ✅ {message}")
@@ -287,7 +305,7 @@ def run_discord_bot():
             await interaction.followup.send("> **ERREUR: Une erreur est survenue, veuillez réessayer plus tard.**")
             logger.exception(f"Erreur lors de la vérification de la réponse au quiz : {e}")
 
-    @discordClient.tree.command(name="help", description="Montre les commandes du bot")
+    @client.tree.command(name="help", description="Montre les commandes du bot")
     async def help(interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=False)
         await interaction.followup.send(""":crystal_ball: **COMMANDES BASIQUES** :crystal_ball:
@@ -312,14 +330,14 @@ def run_discord_bot():
             "\x1b[31mSomeone needs help!\x1b[0m")
 
 
-    @discordClient.tree.command(name="draw", description="Generate an image with the Dall-e-3 model")
+    @client.tree.command(name="draw", description="Generate an image with the Dall-e-3 model")
     @app_commands.choices(model=[
         app_commands.Choice(name="gemini", value="gemini"),
         app_commands.Choice(name="openai", value="openai"),
         app_commands.Choice(name="bing", value="BingCreateImages"),
     ])
     async def draw(interaction: discord.Interaction, *, prompt: str, model: app_commands.Choice[str]):
-        if interaction.user == discordClient.user:
+        if interaction.user == client.user:
             return
 
         username = str(interaction.user)
@@ -327,7 +345,7 @@ def run_discord_bot():
         logger.info(
             f"\x1b[31m{username}\x1b[0m : /draw [{prompt}] in ({channel})")
 
-        await interaction.response.defer(thinking=True, ephemeral=discordClient.isPrivate)
+        await interaction.response.defer(thinking=True, ephemeral=client.isPrivate)
         try:
             image_url = await art.draw(model.value, prompt)
 
@@ -347,7 +365,7 @@ def run_discord_bot():
         for key, value in personas.PERSONAS.items()
     ]
 
-    @discordClient.tree.command(
+    @client.tree.command(
         name="switchpersona",
         description="Changer entre les personnalités de Madame Kirma"
     )
@@ -366,7 +384,7 @@ def run_discord_bot():
         await interaction.response.defer(thinking=True, ephemeral=True)
         try:
             # Correction : passe uniquement persona_value
-            await discordClient.switch_persona(persona_value)
+            await client.switch_persona(persona_value)
             personas.current_persona = persona_value
             await interaction.followup.send(
                 f"> **INFO : Personnalité changée en `{persona_value}` avec succès.**\nDescription : {personas.PERSONAS[persona_value]['description']}", ephemeral=True)
@@ -376,9 +394,9 @@ def run_discord_bot():
             logger.exception(f"Erreur lors du changement de personnalité : {e}")
 
 
-    # @discordClient.tree.command(DatabaseCommands(name="db", description='Access to database functionalities'))
+    # @client.tree.command(DatabaseCommands(name="db", description='Access to database functionalities'))
 
-    @discordClient.tree.command(name="currentpersona", description="Affiche la personnalité actuellement active")
+    @client.tree.command(name="currentpersona", description="Affiche la personnalité actuellement active")
     async def currentpersona(interaction: discord.Interaction):
         persona = personas.current_persona
         desc = personas.PERSONAS.get(persona, {}).get("description", "Aucune description disponible.")
@@ -386,7 +404,7 @@ def run_discord_bot():
             f"> **Personnalité actuelle :** `{persona}`\nDescription : {desc}", ephemeral=True
         )
 
-    @discordClient.tree.command(name="scores", description="Affiche le classement des scores du serveur")
+    @client.tree.command(name="scores", description="Affiche le classement des scores du serveur")
     async def scores(interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         guild = interaction.guild
@@ -408,7 +426,7 @@ def run_discord_bot():
             await interaction.followup.send("> Erreur lors de la récupération des scores.")
             logger.exception(f"Erreur lors de l'affichage des scores : {e}")
 
-    @discordClient.tree.command(name="vote", description="Lance un vote avec jusqu'à 5 choix. Résultats après 5 minutes.")
+    @client.tree.command(name="vote", description="Lance un vote avec jusqu'à 5 choix. Résultats après 5 minutes.")
     @app_commands.describe(question="La question du vote", choix1="Premier choix", choix2="Deuxième choix", choix3="Troisième choix", choix4="Quatrième choix", choix5="Cinquième choix")
     async def vote(
         interaction: discord.Interaction,
@@ -444,9 +462,9 @@ def run_discord_bot():
         result_text = "\n".join(results)
         await interaction.followup.send(f"**Résultats du vote :**\n{result_text}")
 
-    @discordClient.tree.command(name="createpersona", description="Ajouter une personnalité custom")
+    @client.tree.command(name="createpersona", description="Ajouter une personnalité custom")
     async def createPersona(interaction: discord.Interaction, name: str, description: str, prompt: str):
-        if interaction.user == discordClient.user:
+        if interaction.user == client.user:
             return
 
         await interaction.response.defer(thinking=True, ephemeral=True)
@@ -467,7 +485,7 @@ def run_discord_bot():
 
                 personas.PERSONAS[name] = {"description": description, "prompt": prompt}
                 personas.current_persona = name
-                await discordClient.switch_persona(name)
+                await client.switch_persona(name)
                 await interaction.followup.send(
                     f"> **INFO : Personnalité `{name}` ajoutée et activée avec succès !**\nDescription : {description}", ephemeral=True)
                 logger.info(f"Custom persona `{name}` added and activated successfully.")
@@ -476,32 +494,67 @@ def run_discord_bot():
                     "> **ERREUR : Une erreur est survenue lors de l'ajout de la personnalité.**", ephemeral=True)
                 logger.exception(f"Erreur lors de l'ajout de la personnalité `{name}` : {e}")
 
-    @discordClient.event
+    @client.tree.command(name="setchannelbot", description="Définit le salon principal pour le bot (admin seulement)")
+    async def setchannelbot(interaction: discord.Interaction, channel: discord.TextChannel):
+        admin_id = os.getenv("ADMIN_USER_ID")
+        if not admin_id or str(interaction.user.id) != str(admin_id):
+            await interaction.response.send_message("> **ERREUR : Seul l'administrateur peut changer le salon principal du bot.**", ephemeral=True)
+            return
+        guild = interaction.guild
+        if not guild:
+            await interaction.response.send_message("> **ERREUR : Cette commande doit être utilisée dans un serveur.**", ephemeral=True)
+            return
+        db_user = os.getenv('PGUSER')
+        db_password = os.getenv('PGPASSWORD')
+        db_host = os.getenv('PGHOST', 'localhost')
+        db_port = os.getenv('PGPORT', '5432')
+        db_name = f"guild_{guild.id}"
+        try:
+            conn = await asyncpg.connect(user=db_user, password=db_password, database=db_name, host=db_host, port=db_port)
+            await conn.execute('''
+                CREATE TABLE IF NOT EXISTS Settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT
+                );
+            ''')
+            await conn.execute('''
+                INSERT INTO Settings (key, value) VALUES ('DISCORD_CHANNEL_ID', $1)
+                ON CONFLICT (key) DO UPDATE SET value = $1;
+            ''', str(channel.id))
+            await conn.close()
+            await interaction.response.send_message(f"> **Le salon principal du bot a été défini sur <#{channel.id}> pour ce serveur.**", ephemeral=True)
+            print(f"[BOT] Salon principal du bot mis à jour pour {guild.name} ({guild.id}) : {channel.id}")
+        except Exception as e:
+            await interaction.response.send_message("> **ERREUR : Impossible de mettre à jour le salon principal du bot.**", ephemeral=True)
+            logger.exception(f"Erreur lors de la mise à jour du salon principal du bot : {e}")
+            print(f"[ERREUR] Impossible de mettre à jour le salon principal du bot : {e}")
+
+    @client.event
     async def on_message(message):
-        if discordClient.is_replying_all == "True":
-            if message.author == discordClient.user:
+        if client.is_replying_all == "True":
+            if message.author == client.user:
                 return
             # Ignore les messages de commande slash
             if hasattr(message, 'content') and message.content.startswith('/'):
                 return
             if getattr(message, 'interaction', None) is not None:
                 return
-            if discordClient.replying_all_discord_channel_id:
-                if message.channel.id == int(discordClient.replying_all_discord_channel_id):
+            if client.replying_all_discord_channel_id:
+                if message.channel.id == int(client.replying_all_discord_channel_id):
                     username = str(message.author)
                     user_message = str(message.content)
-                    discordClient.current_channel = message.channel
-                    logger.info(f"\x1b[31m{username}\x1b[0m : '{user_message}' ({discordClient.current_channel})")
+                    client.current_channel = message.channel
+                    logger.info(f"\x1b[31m{username}\x1b[0m : '{user_message}' ({client.current_channel})")
 
                     # Use web search if enabled and OpenAI is available
-                    if discordClient.web_search_mode and os.getenv("OPENAI_ENABLED") == "True":
-                        await discordClient.enqueue_web_search_message(message, user_message)
+                    if client.web_search_mode and os.getenv("OPENAI_ENABLED") == "True":
+                        await client.enqueue_web_search_message(message, user_message)
                     else:
-                        await discordClient.enqueue_message(message, user_message)
+                        await client.enqueue_message(message, user_message)
             else:
                 logger.exception("replying_all_discord_channel_id not found, please use the command `/replyall` again.")
 
-    @discordClient.tree.command(name="restart", description="Redémarre le bot (admin seulement)")
+    @client.tree.command(name="restart", description="Redémarre le bot (admin seulement)")
     async def restart(interaction: discord.Interaction):
         admin_id = os.getenv("ADMIN_USER_ID")
         logger.info(f"Commande /restart appelée par {interaction.user} (ID: {interaction.user.id})")
@@ -513,7 +566,7 @@ def run_discord_bot():
         logger.info("Redémarrage du bot demandé par l'administrateur.")
         os.execv(sys.executable, [sys.executable, "main.py"])
 
-    @discordClient.tree.command(name="sendlog", description="Envoie le fichier log au DM de l'admin")
+    @client.tree.command(name="sendlog", description="Envoie le fichier log au DM de l'admin")
     async def sendlog(interaction: discord.Interaction):
         admin_id = os.getenv("ADMIN_USER_ID")
         logger.info(f"Commande /sendlog appelée par {interaction.user} (ID: {interaction.user.id})")
@@ -543,5 +596,5 @@ def run_discord_bot():
 
     TOKEN = os.getenv("DISCORD_BOT_TOKEN")
     logger.info("Démarrage du bot Discord...")
-    discordClient.run(TOKEN)
+    client.run(TOKEN)
 
