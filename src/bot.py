@@ -3,6 +3,8 @@ import asyncio
 import discord
 import asyncpg  # Ajout pour la commande /scores
 import sys
+import logging
+from logging.handlers import RotatingFileHandler
 
 from src.log import logger
 
@@ -31,6 +33,22 @@ LAST_UPDATE_SUMMARY = (
     "- Ajout des fonctionnalités de recherche web avec OpenAI\n"
     "- Système de quiz automatique avec 2 énigmes par jour (matin et après-midi)\n"
 )
+
+def setup_rotating_logger():
+    log_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "log")
+    os.makedirs(log_dir, exist_ok=True)
+    log_path = os.path.join(log_dir, "bot_discord.log")
+    # Discord file upload limit for non-Nitro is 8MB (8*1024*1024 bytes)
+    max_bytes = 8 * 1024 * 1024
+    backup_count = 5  # Keep last 5 log files
+    handler = RotatingFileHandler(log_path, maxBytes=max_bytes, backupCount=backup_count, encoding="utf-8")
+    formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
+    handler.setFormatter(formatter)
+    logger.handlers = []  # Remove any existing handlers
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+
+setup_rotating_logger()
 
 def run_discord_bot():            
 
@@ -503,17 +521,22 @@ def run_discord_bot():
             logger.warning("Tentative d'accès au log non autorisée.")
             await interaction.response.send_message("> **ERREUR : Seul l'administrateur peut recevoir le log.**", ephemeral=True)
             return
-        log_path = os.path.join("log", "bot_discord.log")
-        if not os.path.exists(log_path):
-            logger.error(f"Fichier log introuvable à {log_path}")
-            await interaction.response.send_message("> **ERREUR : Le fichier log n'existe pas.**", ephemeral=True)
+        log_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "log")
+        # Find the most recent log file (rotated or not)
+        log_files = [f for f in os.listdir(log_dir) if f.startswith("bot_discord.log")]
+        if not log_files:
+            logger.error(f"Aucun fichier log trouvé dans {log_dir}")
+            await interaction.response.send_message("> **ERREUR : Aucun fichier log trouvé.**", ephemeral=True)
             return
-        await interaction.response.send_message("> **Envoi du fichier log en DM...**", ephemeral=True)
+        # Sort by modification time, newest first
+        log_files.sort(key=lambda f: os.path.getmtime(os.path.join(log_dir, f)), reverse=True)
+        latest_log_path = os.path.join(log_dir, log_files[0])
+        await interaction.response.send_message("> **Envoi du dernier fichier log en DM...**", ephemeral=True)
         try:
-            with open(log_path, "rb") as f:
+            with open(latest_log_path, "rb") as f:
                 dm = await interaction.user.create_dm()
-                await dm.send(file=discord.File(f, filename="bot_discord.log"))
-            logger.info("Fichier log envoyé en DM à l'administrateur.")
+                await dm.send(file=discord.File(f, filename=log_files[0]))
+            logger.info(f"Fichier log envoyé en DM à l'administrateur : {log_files[0]}")
         except Exception as e:
             logger.exception(f"Erreur lors de l'envoi du log en DM : {e}")
             await interaction.followup.send(f"> **ERREUR : Impossible d'envoyer le log en DM.**\n{e}", ephemeral=True)
