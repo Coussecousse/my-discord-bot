@@ -5,6 +5,7 @@ import json
 import random  # Add this import
 import difflib  # Add this import for fuzzy string matching
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo 
 
 from src import personas
 from src import cultural_theme
@@ -124,7 +125,7 @@ class discordClient(discord.Client):
     async def update_persona_and_daily_message(self):
         # Met à jour la personnalité
         DAY_PERSONAS = json.loads(os.getenv('DAY_PERSONAS', '{}'))
-        today = datetime.now().weekday()  # 0 = Monday, 6 = Sunday
+        today = datetime.now(ZoneInfo("Europe/Paris")).weekday()  # 0 = Monday, 6 = Sunday
         new_persona = DAY_PERSONAS.get(str(today), "standard")  # Default: standard
 
         # Vérifie et met à jour la personnalité
@@ -139,7 +140,7 @@ class discordClient(discord.Client):
             print(f"[INFO] Pas de changement nécessaire. Personnalité actuelle : {personas.current_persona}")
 
         # Vérifie si l'heure est entre 9h et 10h pour envoyer le message du jour
-        now = datetime.now()
+        now = datetime.now(ZoneInfo("Europe/Paris"))
         if now.hour == 7:
             print(f"[DEBUG] Préparation pour envoyer le message du jour à : {now}")
             channel = self.get_channel(int(self.discord_channel_id))
@@ -382,7 +383,7 @@ class discordClient(discord.Client):
             logger.info(f"[QUIZ] Initialisation de la loop daily_quiz pour {guild.name} ({guild.id})")
             @tasks.loop(hours=12)  # Toutes les 12h pour avoir 2 quiz par jour
             async def daily_quiz():
-                now = datetime.now()
+                now = datetime.now(ZoneInfo("Europe/Paris"))
                 logger.info(f"[QUIZ] daily_quiz déclenché à {now} pour {guild.name} ({guild.id})")
                 # Détermine si c'est le quiz du matin (8h-14h) ou de l'après-midi (15h-22h)
                 if now.hour < 14:
@@ -436,7 +437,7 @@ Réponse: ceinture"""
                 if not question or not answer:
                     logger.error(f"[QUIZ] Échec extraction énigme IA : {ia_response}")
                     return  # Ne lance pas le quiz si extraction échouée
-                deadline = datetime.now() + timedelta(hours=1)
+                deadline = datetime.now(ZoneInfo("Europe/Paris")) + timedelta(hours=1)
                 # TEST
                 # deadline = next_quiz_time + timedelta(minutes=1)
                 logger.info(f"[QUIZ] Deadline du quiz : {deadline} pour {guild.name} ({guild.id})")
