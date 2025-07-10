@@ -512,7 +512,7 @@ Réponse: ceinture"""
             
             # Annoncer la fin du quiz et la réponse
             emoji = "🌅" if quiz_type == "matin" else "🌆"
-            end_message = f"{emoji} **Fin du quiz du {quiz_type}** {emoji}\n\n"
+            end_message = f"{emoji} **Fin du quiz** {emoji}\n\n"
             end_message += f"**Question :** {question}\n"
             end_message += f"**Réponse :** {answer}\n\n"
             
@@ -590,7 +590,7 @@ Réponse: ceinture"""
                 
                 # Message différent selon si c'est une correspondance exacte ou similaire
                 if user_answer == expected_answer:
-                    return True, f"Bravo ! Bonne réponse pour l'énigme du {quiz_type}, tu gagnes 10 points !"
+                    return True, f"Bravo ! Bonne réponse, tu gagnes 10 points !"
                 else:
                     return True, f"Bravo ! Ta réponse est suffisamment proche de la réponse attendue '{active_quiz['answer']}'. Tu gagnes 10 points !"
             else:
