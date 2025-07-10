@@ -438,6 +438,7 @@ Réponse: ceinture"""
                     logger.error(f"[QUIZ] Échec extraction énigme IA : {ia_response}")
                     return  # Ne lance pas le quiz si extraction échouée
                 deadline = datetime.now(ZoneInfo("Europe/Paris")) + timedelta(hours=1)
+                deadline = deadline.replace(tzinfo=None)
                 # TEST
                 # deadline = next_quiz_time + timedelta(minutes=1)
                 logger.info(f"[QUIZ] Deadline du quiz : {deadline} pour {guild.name} ({guild.id})")
