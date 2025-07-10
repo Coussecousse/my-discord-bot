@@ -149,7 +149,7 @@ class discordClient(discord.Client):
                     # Prompt pour l'IA
                     prompt = (
                         "Génère un message du jour en utilisant ta personnalité actuelle, "
-                        "résumant les vraies actualités du jour qui sont pertinantes. "
+                        "résumant les vraies actualités du jour qui sont pertinantes, précises et factuelles. "
                         "Le message doit être condensé, informatif, sans introduction ni conclusion, mais lisible avec des retours à la ligne."
                         "et ne doit contenir AUCUN lien ni URL. "
                         "La longueur TOTALE du message doit IMPÉRATIVEMENT rester sous 1500 caractères. "
