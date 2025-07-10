@@ -595,7 +595,7 @@ Réponse: ceinture"""
                 if user_answer == expected_answer:
                     return True, f"Bravo ! Bonne réponse, tu gagnes 10 points !"
                 else:
-                    return True, f"Bravo ! Ta réponse est suffisamment proche de la réponse attendue '{active_quiz['answer']}'. Tu gagnes 10 points !"
+                    return True, f"Bravo ! Ta réponse est suffisamment proche de la réponse attendue. Tu gagnes 10 points !"
             else:
                 await conn.close()
                 return False, "Mauvaise réponse, réessaie !"
