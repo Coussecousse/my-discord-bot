@@ -147,7 +147,15 @@ class discordClient(discord.Client):
                 try:
                     theme = random.choice(cultural_theme.THEMES)  # Use random.choice to select a theme
                     # Prompt pour l'IA
-                    prompt = f"Génère un message du jour en utilisant ta personnalité actuelle donnant les vrais actualités du jour dans un maximum de 1500 caractères (ce point est très important) et ne donne pas d'url."
+                    prompt = (
+                        "Génère un message du jour en utilisant ta personnalité actuelle, "
+                        "résumant les vraies actualités du jour. "
+                        "Le message doit être condensé, informatif, sans introduction ni conclusion, "
+                        "et ne doit contenir AUCUN lien ni URL. "
+                        "La longueur TOTALE du message doit IMPÉRATIVEMENT rester sous 1500 caractères. "
+                        "Si besoin, coupe ou résume davantage. "
+                        "Réponds uniquement par le message, sans explication ni ajout."
+                    )
 
                     generated_message = await self.handle_web_search_response(prompt)
                     # Envoie le message généré dans le canal, découpé si trop long
