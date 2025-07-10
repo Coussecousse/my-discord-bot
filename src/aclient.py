@@ -150,9 +150,11 @@ class discordClient(discord.Client):
                     prompt = f"Génère un message du jour en utilisant ta personnalité actuelle donnant les vrais actualités du jour dans un maximum de 1500 caractères (ce point est très important) et ne donne pas d'url."
 
                     generated_message = await self.handle_web_search_response(prompt)
-                    # Envoie le message généré dans le canal
-                    await channel.send(generated_message)
-                    print(f"[INFO] Message du jour envoyé : {generated_message}")
+                    # Envoie le message généré dans le canal, découpé si trop long
+                    max_length = 2000
+                    for i in range(0, len(generated_message), max_length):
+                        await channel.send(generated_message[i:i+max_length])
+                    print(f"[INFO] Message du jour envoyé (découpé si besoin).")
                 except Exception as e:
                     logger.exception(f"Erreur lors de l'envoi du message du jour : {e}")
                     print(f"[ERREUR] Erreur lors de l'envoi du message du jour : {e}")
