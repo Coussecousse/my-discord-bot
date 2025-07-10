@@ -152,9 +152,10 @@ class discordClient(discord.Client):
                         "résumant les vraies actualités du jour qui sont pertinantes, précises et factuelles. "
                         "Le message doit être condensé, informatif, sans introduction ni conclusion, mais lisible avec des retours à la ligne."
                         "et ne doit contenir AUCUN lien ni URL. "
-                        "La longueur TOTALE du message doit IMPÉRATIVEMENT rester sous 1500 caractères. "
+                        "La longueur TOTALE du message doit IMPÉRATIVEMENT rester sous 2000 caractères. "
                         "Si besoin, coupe ou résume davantage. "
                         "Réponds uniquement par le message, sans explication ni ajout."
+                        "il ne doit contenir AUCUN lien ni URL. "
                     )
 
                     generated_message = await self.handle_web_search_response(prompt)
