@@ -410,18 +410,16 @@ class discordClient(discord.Client):
                 
                 # Generate a random word
                 r = RandomWords()
-                random_word = r.get_random_word()
-                logger.info(f"[QUIZ] Mot aléatoire choisi pour l'énigme : {random_word}")
-
-                # Update the prompt with the random word
-                prompt = f"""Génère une énigme originale ou une charade sur le mot {random_word}.
+                random_word_en = r.get_random_word()
+                prompt = f"""Le mot anglais choisi est : "{random_word_en}".
+Traduis ce mot en français, puis génère une énigme originale ou une charade sur ce mot français.
 
 RÈGLES IMPORTANTES :
 - La réponse doit être UN SEUL MOT ou UNE EXPRESSION COURTE (maximum 3 mots)
 - Pas de phrase complète comme réponse
 - Pas d'explication ou d'artifice dans la réponse
 - Seulement le mot/expression exact
-- La réponse doit IMPÉRATIVEMENT être le mot suivant : "{random_word}"
+- La réponse doit IMPÉRATIVEMENT être le mot français traduit depuis : "{random_word_en}"
 
 Format obligatoire :
 Question: [énigme ici]
