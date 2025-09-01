@@ -6,6 +6,7 @@ import random  # Add this import
 import difflib  # Add this import for fuzzy string matching
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo 
+from random_word import RandomWords
 
 from src import personas
 from src import cultural_theme
@@ -406,13 +407,21 @@ class discordClient(discord.Client):
                 logger.info(f"[QUIZ] Attente de {wait_seconds:.0f} secondes avant le prochain quiz pour {guild.name} ({guild.id})")
                 await asyncio.sleep(wait_seconds)
                 logger.info(f"[QUIZ] Génération de l'énigme IA pour {guild.name} ({guild.id})")
-                prompt = """Génère une énigme originale (pas une devinette connue) avec une réponse courte et précise.
+                
+                # Generate a random word
+                r = RandomWords()
+                random_word = r.get_random_word()
+                logger.info(f"[QUIZ] Mot aléatoire choisi pour l'énigme : {random_word}")
+
+                # Update the prompt with the random word
+                prompt = f"""Génère une énigme originale ou une charade sur le mot {random_word}.
 
 RÈGLES IMPORTANTES :
 - La réponse doit être UN SEUL MOT ou UNE EXPRESSION COURTE (maximum 3 mots)
 - Pas de phrase complète comme réponse
 - Pas d'explication ou d'artifice dans la réponse
 - Seulement le mot/expression exact
+- La réponse doit IMPÉRATIVEMENT être le mot suivant : "{random_word}"
 
 Format obligatoire :
 Question: [énigme ici]
@@ -423,7 +432,8 @@ Question: Je suis rond, je roule, mais je ne suis pas une roue. On me mange et j
 Réponse: biscuit
 
 Question: Plus je suis percé, plus je tiens fermement.
-Réponse: ceinture"""
+Réponse: ceinture
+"""
                 ia_response = await self.handle_response(prompt)
                 logger.info(f"[QUIZ] Réponse IA brute : {ia_response}")
                 # Extraction question/réponse
