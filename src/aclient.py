@@ -392,7 +392,7 @@ class discordClient(discord.Client):
                     quiz_type = "matin"
                     logger.info(f"[QUIZ] Sélection du créneau matin pour {guild.name} ({guild.id})")
                 else:
-                    hour = random.randint(15, 22)
+                    hour = random.randint(16, 22)
                     quiz_type = "après-midi"
                     logger.info(f"[QUIZ] Sélection du créneau après-midi pour {guild.name} ({guild.id})")
                 minute = random.randint(0, 59)
