@@ -407,9 +407,9 @@ class discordClient(discord.Client):
                     quiz_type = "après-midi"
                     logger.info(f"[QUIZ] Sélection du créneau après-midi pour {guild.name} ({guild.id})")
                 minute = random.randint(0, 59)
-                # next_quiz_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+                next_quiz_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
                 # TEST
-                next_quiz_time = now + timedelta(minutes=1)
+                # next_quiz_time = now + timedelta(minutes=1)
                 logger.info(f"[QUIZ] Prochain quiz ({quiz_type}) prévu à {next_quiz_time.strftime('%Y-%m-%d %H:%M:%S')} pour {guild.name} ({guild.id})")
                 if next_quiz_time < now:
                     logger.debug(f"[QUIZ] next_quiz_time < now, ajout de 12h")
