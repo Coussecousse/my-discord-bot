@@ -316,6 +316,17 @@ class discordClient(discord.Client):
             );
         ''')
         
+        # Ajout de la table Clues pour suivre les indices demandés
+        await guild_conn.execute('''
+            CREATE TABLE IF NOT EXISTS Clues (
+                id SERIAL PRIMARY KEY,
+                quiz_id INTEGER REFERENCES Quizzes(id),
+                user_id BIGINT,
+                clues_count INTEGER DEFAULT 0,
+                UNIQUE (quiz_id, user_id)
+            );
+        ''')
+        
         # Ajout des membres du serveur dans la table Users
         await self.insert_guild_members(guild_conn, guild)
         await guild_conn.close()
@@ -396,9 +407,9 @@ class discordClient(discord.Client):
                     quiz_type = "après-midi"
                     logger.info(f"[QUIZ] Sélection du créneau après-midi pour {guild.name} ({guild.id})")
                 minute = random.randint(0, 59)
-                next_quiz_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+                # next_quiz_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
                 # TEST
-                # next_quiz_time = now + timedelta(minutes=1)
+                next_quiz_time = now + timedelta(minutes=1)
                 logger.info(f"[QUIZ] Prochain quiz ({quiz_type}) prévu à {next_quiz_time.strftime('%Y-%m-%d %H:%M:%S')} pour {guild.name} ({guild.id})")
                 if next_quiz_time < now:
                     logger.debug(f"[QUIZ] next_quiz_time < now, ajout de 12h")
@@ -585,9 +596,15 @@ Réponse: ceinture
             logger.info(f"[QUIZ] Similarité calculée : {similarity:.2f} (seuil: {similarity_threshold})")
             
             # Accepter la réponse si elle est identique ou suffisamment similaire
+            # Calcul du score en fonction des indices demandés
+            clues_row = await conn.fetchrow('SELECT clues_count FROM Clues WHERE quiz_id = $1 AND user_id = $2', quiz_id, user_id)
+            clues_count = clues_row['clues_count'] if clues_row else 0
+            score = max(10 - 2 * clues_count, 4)
+
+            # Accepter la réponse si elle est identique ou suffisamment similaire
             if user_answer == expected_answer or similarity >= similarity_threshold:
-                # Ajouter 10 points à l'utilisateur
-                await conn.execute("UPDATE Users SET score = score + 10 WHERE discord_id = $1", user_id)
+                # Ajouter le score à l'utilisateur
+                await conn.execute("UPDATE Users SET score = score + $1 WHERE discord_id = $2", score, user_id)
                 
                 # Marquer la réponse comme correcte dans le cache
                 if guild.id not in self.quiz_correct_answers:
@@ -601,9 +618,9 @@ Réponse: ceinture
                 
                 # Message différent selon si c'est une correspondance exacte ou similaire
                 if user_answer == expected_answer:
-                    return True, f"Bravo ! Bonne réponse, tu gagnes 10 points !"
+                    return True, f"Bravo ! Bonne réponse, tu gagnes {score} points !"
                 else:
-                    return True, f"Bravo ! Ta réponse est suffisamment proche de la réponse attendue. Tu gagnes 10 points !"
+                    return True, f"Bravo ! Ta réponse est suffisamment proche de la réponse attendue. Tu gagnes {score} points !"
             else:
                 await conn.close()
                 return False, "Mauvaise réponse, réessaie !"
@@ -629,5 +646,46 @@ Réponse: ceinture
                 break  # Ne supprimer qu'un seul article au début
         
         return normalized
+
+    async def request_quiz_clue(self, guild, user_id):
+        """Permet à un utilisateur de demander un indice pour le quiz actif."""
+        db_user = os.getenv('PGUSER')
+        db_password = os.getenv('PGPASSWORD')
+        db_host = os.getenv('PGHOST', 'localhost')
+        db_port = os.getenv('PGPORT', '5432')
+        db_name = f"guild_{guild.id}"
+
+        try:
+            conn = await asyncpg.connect(user=db_user, password=db_password, database=db_name, host=db_host, port=db_port)
+            active_quiz = await conn.fetchrow('''
+                SELECT id, question, answer FROM Quizzes WHERE is_active = TRUE AND deadline > NOW() ORDER BY created_at DESC LIMIT 1
+            ''')
+            if not active_quiz:
+                await conn.close()
+                return False, "Aucune énigme en cours."
+
+            quiz_id = active_quiz['id']
+            clue_row = await conn.fetchrow('SELECT clues_count FROM Clues WHERE quiz_id = $1 AND user_id = $2', quiz_id, user_id)
+            clues_count = clue_row['clues_count'] if clue_row else 0
+
+            if clues_count >= 3:
+                await conn.close()
+                return False, "Tu as déjà demandé le maximum d'indices (3) pour cette énigme."
+
+            # Générer un indice via l'IA (exemple simple : demander une explication du mot)
+            prompt = f"Donne un indice pour deviner le mot suivant (sans donner la réponse) : {active_quiz['question']}"
+            clue = await self.handle_response(prompt)
+
+            # Mettre à jour le nombre d'indices demandés
+            if clue_row:
+                await conn.execute('UPDATE Clues SET clues_count = clues_count + 1 WHERE quiz_id = $1 AND user_id = $2', quiz_id, user_id)
+            else:
+                await conn.execute('INSERT INTO Clues (quiz_id, user_id, clues_count) VALUES ($1, $2, 1)', quiz_id, user_id)
+
+            await conn.close()
+            return True, clue
+        except Exception as e:
+            logger.error(f"[QUIZ] Erreur lors de la demande d'indice : {e}")
+            return False, "Erreur technique, veuillez réessayer plus tard."
 
 discordClient = discordClient()

@@ -260,6 +260,20 @@ def run_discord_bot():
     #         await interaction.followup.send(f'> **Error Switching Model: {e}**')
     #         logger.error(f"Error switching chat model: {e}")
 
+    @client.tree.command(name="clue", description="Demande un indice pour l'énigme du jour (max 3)")
+    async def clue(interaction: discord.Interaction):
+        if interaction.user == client.user:
+            return
+        await interaction.response.defer(ephemeral=True)
+        guild = interaction.guild
+        user_id = interaction.user.id
+        success, clue = await client.request_quiz_clue(guild, user_id)
+        if success:
+            await interaction.followup.send(f"> **Indice :** {clue}")
+        else:
+            await interaction.followup.send(f"> **ERREUR :** {clue}")
+
+            
     @client.tree.command(name="reset", description="Reset la discussion")
     async def reset(interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=False)
