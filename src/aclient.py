@@ -423,7 +423,7 @@ class discordClient(discord.Client):
                 r = RandomWords()
                 random_word_en = r.get_random_word()
                 prompt = f"""Le mot anglais choisi est : "{random_word_en}".
-Traduis ce mot en français, puis génère une énigme originale ou une charade sur ce mot français.
+Traduis ce mot en français, puis génère une énigme originale sur ce mot.
 
 RÈGLES IMPORTANTES :
 - La réponse doit être UN SEUL MOT ou UNE EXPRESSION COURTE (maximum 3 mots)
@@ -431,6 +431,7 @@ RÈGLES IMPORTANTES :
 - Pas d'explication ou d'artifice dans la réponse
 - Seulement le mot/expression exact
 - La réponse doit IMPÉRATIVEMENT être le mot français traduit depuis : "{random_word_en}"
+- L'énigme peut être une charade, une devinette, une description imagée, une métaphore, une comparaison, une énigme poétique, etc.
 
 Format obligatoire :
 Question: [énigme ici]
@@ -673,7 +674,11 @@ Réponse: ceinture
                 return False, "Tu as déjà demandé le maximum d'indices (3) pour cette énigme."
 
             # Générer un indice via l'IA (exemple simple : demander une explication du mot)
-            prompt = f"Donne un indice pour deviner le mot suivant (sans donner la réponse) : {active_quiz['question']}"
+            prompt = (
+                f"Voici une énigme : \"{active_quiz['question']}\". Et voici sa réponse : \"{active_quiz['answer']}\".\n"
+                "Donne un indice supplémentaire pour aider à trouver la réponse, sans révéler le mot ou l'expression exacte. "
+                "L'indice peut être une charade, une devinette, une anecdote ou toute autre forme, mais il ne doit pas donner la solution directement."
+            )
             clue = await self.handle_response(prompt)
 
             # Mettre à jour le nombre d'indices demandés
