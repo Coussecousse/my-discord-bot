@@ -8,3 +8,5 @@ g4f[all]
 httpx==0.27.2
 random-word
 tzdata
+pytest-asyncio
+asyncpg
