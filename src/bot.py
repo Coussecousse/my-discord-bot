@@ -22,16 +22,10 @@ from src.db.db_commands import DatabaseCommands
 skip_first_loop = False
 
 # Informations sur la dernière mise à jour
-LAST_UPDATE_DATE = "2025-07-07"
+LAST_UPDATE_DATE = "2025-29-09"
 LAST_UPDATE_SUMMARY = (
-    "- Ajout de la commande /lastupdate\n"
-    "- Ajout de la commande /currentpersona pour afficher la personnalité active\n"
-    "- Ajout de la commande /scores pour afficher le classement du serveur\n"
-    "- Ajout de la commande /vote pour lancer des votes à choix multiples (résultats après 5 min)\n"
-    "- Ajout de la commande /createpersona pour créer des personnalités custom\n"
-    "- Amélioration du système de quiz avec correspondance floue et cache des réponses\n"
-    "- Ajout des fonctionnalités de recherche web avec OpenAI\n"
-    "- Système de quiz automatique avec 2 énigmes par jour (matin et après-midi)\n"
+    "- Amélioration des prompts d'énigmes\n"
+    "- Ajout de la commande /clue pour échanger 2 points contre un indice (max 3 indices).\n"
 )
 
 def setup_rotating_logger():
@@ -327,6 +321,7 @@ def run_discord_bot():
 - `/websearch [message]` Chat avec capacités de recherche web (nécessite OpenAI).
 - `/draw [prompt][model]` Je peux générer une image avec un modèle spécifique.
 - `/quiz [réponse]` Réponds à l'énigme du jour ! 2 énigmes par jour (matin et après-midi).
+- `/clue` Echange 2 points contre un indice (max 3 indices).
 - `/switchpersona [persona]` Change la personnalité de Madame Kirma
 - `/currentpersona` Affiche la personnalité actuellement active.
 - `/createpersona [nom][description][prompt]` Créer une personnalité custom.
